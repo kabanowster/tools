@@ -26,9 +26,9 @@ public class Tools {
 		return stream.filter(Objects::nonNull).map(String::valueOf).collect(Collectors.joining(delimeter));
 	}
 	
-	public Set<Integer> splitRangesToInts(String ranges) {
+	public Set<Integer> splitRangesToInts(String delimeter, String ranges) {
 		if (ranges == null) return Set.of();
-		return Stream.of(ranges.split(";")).flatMap(r -> {
+		return Stream.of(ranges.split(delimeter)).flatMap(r -> {
 			// convert strings to Integers, including ranges
 			String[] range = r.split("-");
 			return IntStream.rangeClosed(Integer.parseInt(range[0]), Integer.parseInt(range[range.length - 1])).boxed();

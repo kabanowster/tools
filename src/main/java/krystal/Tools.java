@@ -25,8 +25,8 @@ public class Tools {
 	public Set<Integer> expandGroupsOfRangesToInts(String groupsDelimeter, String rangesDelimeter, String ranges) {
 		if (ranges == null) return Set.of();
 		return Stream.of(ranges.split(groupsDelimeter)).flatMap(r -> {
-			String[] range = r.trim().split(rangesDelimeter);
-			return IntStream.rangeClosed(Integer.parseInt(range[0].trim()), Integer.parseInt(range[range.length - 1].trim())).boxed();
+			String[] range = r.strip().split(rangesDelimeter);
+			return IntStream.rangeClosed(Integer.parseInt(range[0].strip()), Integer.parseInt(range[range.length - 1].strip())).boxed();
 		}).collect(Collectors.toSet());
 	}
 	

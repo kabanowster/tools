@@ -73,7 +73,8 @@ public class Tools {
 	 */
 	public String concatAsURIPath(String... str) {
 		return Stream.of(str)
-		             .flatMap(s -> Stream.of(s.split("\\|/")))
+		             .flatMap(s -> Stream.of(s.split("[\\\\/]")))
+		             .filter(s -> !s.isEmpty())
 		             .collect(Collectors.joining("/"));
 	}
 	
@@ -106,8 +107,8 @@ public class Tools {
 	 *
 	 * @see #loadResource(String)
 	 */
-	public URL getResource(String... path) {
-		return loadResource(concatAsURIPath(path));
+	public Optional<URL> getResource(String... path) {
+		return Optional.ofNullable(loadResource(concatAsURIPath(path)));
 	}
 	
 }

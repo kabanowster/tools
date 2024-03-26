@@ -17,8 +17,8 @@ import java.util.stream.Stream;
  * </p>
  * <pre>
  * <b>Defaults:</b>
- * columnIndex & rowIndex = 0;
- * columnspan & rowspan = 1;
+ * columnIndex and rowIndex = 0;
+ * columnspan and rowspan = 1;
  * alignments = CENTER;
  * grows = NEVER;
  * margin = 0;

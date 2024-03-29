@@ -9,9 +9,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Stream;
 
+/**
+ * Methods to visualize objects into strings, like ASCII tables.
+ */
 @UtilityClass
 public class StringRenderer {
 	
+	/**
+	 * Renders provided rows and columns into appealing ASCII table.
+	 */
 	public String renderTable(List<String> columns, List<List<String>> rows) {
 		
 		val render = new StringBuilder();
@@ -31,6 +37,9 @@ public class StringRenderer {
 		return render.toString();
 	}
 	
+	/**
+	 * Renders a single row of values with minimum width applied to each.
+	 */
 	public String renderRow(List<String> row, List<Integer> minWidths) {
 		val result = new StringBuilder();
 		
@@ -45,6 +54,9 @@ public class StringRenderer {
 		return result.toString();
 	}
 	
+	/**
+	 * Given the rows and columns, calculates the minimum widths for each column based on maximum lengths of values in each row.
+	 */
 	public List<Integer> calculateMinWidths(List<String> columns, List<List<String>> rows) {
 		val c = columns.size();
 		val minWidths = new HashMap<Integer, Integer>(c);

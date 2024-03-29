@@ -105,7 +105,7 @@ public class GridPaneContstraintsWrapper<T extends GridPane> {
 		return this;
 	}
 	
-	/*
+	/**
 	 * Margin setting with specified Insets.
 	 */
 	public GridPaneContstraintsWrapper<T> margin(Insets ins) {

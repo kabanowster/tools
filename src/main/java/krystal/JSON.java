@@ -20,6 +20,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * Class wrapping {@link JSONObject} utilities, allowing for deep (de)serialization of objects.
+ */
 @UtilityClass
 @Log4j2
 public class JSON {

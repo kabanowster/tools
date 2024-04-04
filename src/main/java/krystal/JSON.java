@@ -3,7 +3,6 @@ package krystal;
 import lombok.experimental.UtilityClass;
 import lombok.extern.log4j.Log4j2;
 import lombok.val;
-import org.javatuples.Pair;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -102,7 +101,7 @@ public class JSON {
 			val collection = Set.class.isAssignableFrom(clazz) ? new LinkedHashSet<>() : new LinkedList<>();
 			val types = innerTypes.length == 1 ? determineTypes(innerTypes[0]) : determineTypes(null);
 			
-			for (var element : jsonArray) collection.add(into(element, types.getValue0(), types.getValue1()));
+			for (var element : jsonArray) collection.add(into(element, types.clazz(), types.types()));
 			return clazz.isArray() ? collection.toArray((Object[]) Array.newInstance(clazz.getComponentType(), collection.size())) : collection;
 			
 		} else if (json instanceof JSONObject jsonObject) {
@@ -116,7 +115,7 @@ public class JSON {
 				val types = innerTypes.length == 2 ? determineTypes(innerTypes[1]) : determineTypes(null);
 				
 				for (var element : jsonObject.keySet())
-					map.put(element, into(jsonObject.get(element), types.getValue0(), types.getValue1()));
+					map.put(element, into(jsonObject.get(element), types.clazz(), types.types()));
 				
 				return map;
 				
@@ -197,11 +196,11 @@ public class JSON {
 	 *
 	 * @return Tuple of Class and populated Type[] if any, empty otherwise. I.e. {@code List<Map<String,Set>>} returns {@code Pair<List, Map<String,Set>>}.
 	 */
-	private Pair<Class<?>, Type[]> determineTypes(Type elementType) {
+	private TypesPair determineTypes(Type elementType) {
 		Class<?> elementClass = Objects.class;
 		var arguments = new Type[0];
 		
-		if (elementType == null) return Pair.with(elementClass, arguments);
+		if (elementType == null) return new TypesPair(elementClass, arguments);
 		
 		try {
 			if (elementType instanceof ParameterizedType t) {
@@ -214,7 +213,11 @@ public class JSON {
 		} catch (ClassNotFoundException e) {
 			throw new RuntimeException(e);
 		}
-		return Pair.with(elementClass, arguments);
+		return new TypesPair(elementClass, arguments);
+	}
+	
+	private record TypesPair(Class<?> clazz, Type[] types) {
+	
 	}
 	
 	/**

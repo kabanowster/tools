@@ -127,12 +127,11 @@ public class Tools {
 	
 	@SuppressWarnings("unchecked")
 	public <T, A extends Annotation> List<T> getAnnotadedValues(Class<A> annotationClass, Class<T> returnType, Object invokedOn) {
+		
 		return Stream.concat(
 				Stream.of(invokedOn.getClass().getDeclaredFields())
-				      .filter(f -> f.isAnnotationPresent(annotationClass))
+				      .filter(f -> f.isAnnotationPresent(annotationClass) && returnType.isAssignableFrom(f.getType()) && f.trySetAccessible())
 				      .map(f -> {
-					      f.setAccessible(true);
-					      if (!returnType.isAssignableFrom(f.getType())) throw new RuntimeException();
 					      try {
 						      return (T) f.get(invokedOn);
 					      } catch (IllegalAccessException e) {
@@ -140,10 +139,8 @@ public class Tools {
 					      }
 				      }),
 				Stream.of(invokedOn.getClass().getDeclaredMethods())
-				      .filter(m -> m.isAnnotationPresent(annotationClass))
+				      .filter(m -> m.isAnnotationPresent(annotationClass) && returnType.isAssignableFrom(m.getReturnType()) && m.trySetAccessible())
 				      .map(m -> {
-					      m.setAccessible(true);
-					      if (!returnType.isAssignableFrom(m.getReturnType())) throw new RuntimeException();
 					      try {
 						      return (T) m.invoke(invokedOn);
 					      } catch (IllegalAccessException | InvocationTargetException e) {

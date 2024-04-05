@@ -9,20 +9,19 @@ import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.Phaser;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.stream.Stream;
 
 /**
- * Each pipeline execution is a single VirtualThread.
+ * Each pipeline execution is a single VirtualThread. The execution starts at first pipeline step declared.
  */
 @AllArgsConstructor
 public class VirtualPromise<T> {
+	
+	private static ExecutorService virtualExecutor;
 	
 	private final LinkedBlockingQueue<Thread> threads;
 	private final AtomicReference<T> objectState;
@@ -140,8 +139,9 @@ public class VirtualPromise<T> {
 	}
 	
 	public static VirtualPromise<Void> forkJoin(@Nullable String threadName, VirtualPromise<?>... promises) {
-		return new VirtualPromise<>(null, promises);
+		return new VirtualPromise<>(threadName, promises);
 	}
+	
 	/*
 	 * Intermediate methods
 	 */
@@ -467,6 +467,39 @@ public class VirtualPromise<T> {
 	 */
 	public String getActiveVirtualName() {
 		return activeWorker.get().getName();
+	}
+	
+	/*
+	 * Virtual CompletableFuture Factory
+	 */
+	
+	private static ExecutorService getVirtualExecutor() {
+		return Optional.ofNullable(virtualExecutor).orElseGet(() -> {
+			virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+			return virtualExecutor;
+		});
+	}
+	
+	public static CompletableFuture<Void> futureRun(Runnable runnable) {
+		return CompletableFuture.runAsync(runnable, getVirtualExecutor());
+	}
+	
+	public static <F> CompletableFuture<F> futureSupply(Supplier<F> supplier) {
+		return CompletableFuture.supplyAsync(supplier, getVirtualExecutor());
+	}
+	
+	public static <T> VirtualPromise<T> fromFuture(CompletableFuture<T> future) {
+		return VirtualPromise.supply(future::join);
+	}
+	
+	public CompletableFuture<T> toFuture() {
+		return futureSupply(() -> {
+			try {
+				return joinExceptionally().orElse(null);
+			} catch (ExecutionException e) {
+				throw new RuntimeException(e);
+			}
+		});
 	}
 	
 }

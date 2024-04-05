@@ -53,7 +53,7 @@ public class JSON {
 		val clazz = obj.getClass();
 		
 		if (Map.class.isAssignableFrom(clazz)) {
-			val flattisonMap = new HashMap<>(); // nullable values
+			val flattisonMap = new LinkedHashMap<>(); // nullable values
 			((Map<?, ?>) obj).forEach((k, v) -> flattisonMap.put(k, flattison(v)));
 			return flattisonMap;
 		} else if (Collection.class.isAssignableFrom(clazz) || clazz.isArray()) {
@@ -61,7 +61,7 @@ public class JSON {
 					.map(JSON::flattison)
 					.toList();
 		} else if (clazz.isAnnotationPresent(Flattison.class)) {
-			val fieldsMap = new HashMap<>(); // nullable values
+			val fieldsMap = new LinkedHashMap<>(); // nullable values
 			
 			Stream.of(clazz.getDeclaredFields())
 			      .forEach(f -> {
@@ -111,7 +111,7 @@ public class JSON {
 			} else if (Map.class.isAssignableFrom(clazz)) {
 				// value is a declared map
 				
-				val map = new HashMap<>();
+				val map = new LinkedHashMap<>();
 				val types = innerTypes.length == 2 ? determineTypes(innerTypes[1]) : determineTypes(null);
 				
 				for (var element : jsonObject.keySet())
@@ -144,7 +144,8 @@ public class JSON {
 										      return name.toLowerCase();
 									      },
 									      m -> m,
-									      (a, b) -> b.isAnnotationPresent(Deserializer.class) ? b : a
+									      (a, b) -> b.isAnnotationPresent(Deserializer.class) ? b : a,
+									      LinkedHashMap::new
 							      ));
 					
 					Stream.of(clazz.getDeclaredFields())

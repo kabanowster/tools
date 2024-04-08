@@ -7,10 +7,13 @@ import lombok.val;
 
 import javax.annotation.Nullable;
 import java.time.Duration;
+import java.util.Comparator;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.stream.Stream;
@@ -185,14 +188,14 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
-	public <R> VirtualPromise<R> thenApply(Function<T, R> function) {
-		return thenApply(function, null);
+	public <R> VirtualPromise<R> map(Function<T, R> function) {
+		return map(function, null);
 	}
 	
-	public <R> VirtualPromise<R> thenApply(Function<T, R> function, @Nullable String threadName) {
+	public <R> VirtualPromise<R> map(Function<T, R> function, @Nullable String threadName) {
 		phaser.register();
 		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenApply")).unstarted(() -> {
+		val thread = Thread.ofVirtual().name(constructName(threadName, "map")).unstarted(() -> {
 			try {
 				activeWorker.set(Thread.currentThread());
 				if (exception.get() == null) newState.set(function.apply(objectState.get()));
@@ -205,13 +208,13 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
-	public VirtualPromise<T> thenUpdate(UnaryOperator<T> updater) {
-		return thenUpdate(updater, null);
+	public VirtualPromise<T> apply(UnaryOperator<T> updater) {
+		return apply(updater, null);
 	}
 	
-	public VirtualPromise<T> thenUpdate(UnaryOperator<T> updater, @Nullable String threadName) {
+	public VirtualPromise<T> apply(UnaryOperator<T> updater, @Nullable String threadName) {
 		phaser.register();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenUpdate")).unstarted(() -> {
+		val thread = Thread.ofVirtual().name(constructName(threadName, "apply")).unstarted(() -> {
 			try {
 				activeWorker.set(Thread.currentThread());
 				if (exception.get() == null) objectState.getAndUpdate(updater);
@@ -224,13 +227,13 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
-	public VirtualPromise<Void> thenAccept(Consumer<T> consumer) {
-		return thenAccept(consumer, null);
+	public VirtualPromise<Void> accept(Consumer<T> consumer) {
+		return accept(consumer, null);
 	}
 	
-	public VirtualPromise<Void> thenAccept(Consumer<T> consumer, @Nullable String threadName) {
+	public VirtualPromise<Void> accept(Consumer<T> consumer, @Nullable String threadName) {
 		phaser.register();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenAccept")).unstarted(() -> {
+		val thread = Thread.ofVirtual().name(constructName(threadName, "accept")).unstarted(() -> {
 			try {
 				activeWorker.set(Thread.currentThread());
 				if (exception.get() == null) consumer.accept(objectState.get());
@@ -243,14 +246,14 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, new AtomicReference<>(), phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
-	public <R> VirtualPromise<R> thenCompose(Function<T, @NonNull VirtualPromise<R>> function) {
-		return thenCompose(function, null);
+	public <R> VirtualPromise<R> compose(Function<T, @NonNull VirtualPromise<R>> function) {
+		return compose(function, null);
 	}
 	
-	public <R> VirtualPromise<R> thenCompose(Function<T, @NonNull VirtualPromise<R>> function, @Nullable String threadName) {
+	public <R> VirtualPromise<R> compose(Function<T, @NonNull VirtualPromise<R>> function, @Nullable String threadName) {
 		phaser.register();
 		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenCompose")).unstarted(() -> {
+		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
 			try {
 				activeWorker.set(Thread.currentThread());
 				if (exception.get() == null) newState.set(function.apply(objectState.get()).joinExceptionally().orElse(null));
@@ -263,21 +266,21 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
-	public <R, U> VirtualPromise<R> thenCombine(VirtualPromise<U> otherPromise, BiFunction<T, U, R> combiner) {
-		return thenCombine(otherPromise, combiner, null);
+	public <R, O> VirtualPromise<R> combine(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner) {
+		return combine(otherPromise, combiner, null);
 	}
 	
 	/**
 	 * The other promise exception affects the current pipeline. Effectively joins provided promise.
 	 */
-	public <R, U> VirtualPromise<R> thenCombine(VirtualPromise<U> otherPromise, BiFunction<T, U, R> combiner, @Nullable String threadName) {
+	public <R, O> VirtualPromise<R> combine(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner, @Nullable String threadName) {
 		phaser.register();
 		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenCombine")).unstarted(() -> {
+		val thread = Thread.ofVirtual().name(constructName(threadName, "combine")).unstarted(() -> {
 			try {
 				activeWorker.set(Thread.currentThread());
 				val otherState = otherPromise.joinExceptionally();
-				if (exception.get() == null) newState.set(combiner.apply(objectState.get(), otherState.orElse(null)));
+				if (exception.get() == null) newState.set(combiner.apply(otherState.orElse(null), objectState.get()));
 			} catch (Exception e) {
 				exception.set(e);
 			}
@@ -286,6 +289,82 @@ public class VirtualPromise<T> {
 		startOrQueue(thread);
 		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
+	
+	public <O, R> VirtualPromise<R> combineFlat(VirtualPromise<O> otherPromise, BiFunction<O, T, VirtualPromise<R>> returnedPromise) {
+		return combineFlat(otherPromise, returnedPromise, null);
+	}
+	
+	public <O, R> VirtualPromise<R> combineFlat(VirtualPromise<O> otherPromise, BiFunction<O, T, VirtualPromise<R>> returnedPromise, @Nullable String threadName) {
+		phaser.register();
+		val newState = new AtomicReference<R>();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "combineFlat")).unstarted(() -> {
+			try {
+				activeWorker.set(Thread.currentThread());
+				if (exception.get() == null) {
+					newState.set(returnedPromise.apply(otherPromise.joinExceptionally().orElse(null), objectState.get()).joinExceptionally().orElse(null));
+				}
+			} catch (Exception e) {
+				exception.set(e);
+			}
+			arriveAndStartNextThread(threads.poll());
+		});
+		startOrQueue(thread);
+		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
+	}
+	
+	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper) {
+		return mapFork(streamSupplier, elementMapper, null);
+	}
+	
+	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper, @Nullable String threadName) {
+		phaser.register();
+		val newState = new AtomicReference<Stream<R>>();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "mapFork")).unstarted(() -> {
+			try {
+				activeWorker.set(Thread.currentThread());
+				
+				if (exception.get() == null) {
+					val object = objectState.get();
+					val elementsCount = streamSupplier.apply(object).mapToInt(e -> 1).sum();
+					val result = new ConcurrentHashMap<Integer, R>(elementsCount);
+					val counter = new AtomicInteger();
+					
+					// split to the fork
+					streamSupplier.apply(object).forEach(
+							o -> {
+								val i = counter.getAndIncrement();
+								Thread.ofVirtual().start(() -> {
+									try {
+										if (exception.get() == null) result.put(i, elementMapper.apply(o));
+									} catch (Exception e) {
+										exception.set(e);
+										activeWorker.get().interrupt();
+									}
+								});
+							});
+					
+					// monitor the fork done
+					while (result.size() != elementsCount) {
+						Thread.sleep(100);
+					}
+					
+					newState.set(result.entrySet()
+					                   .stream()
+					                   .sorted(Comparator.comparingInt(Entry::getKey))
+					                   .map(Entry::getValue));
+				}
+			} catch (Exception e) {
+				exception.compareAndSet(null, e);
+			}
+			arriveAndStartNextThread(threads.poll());
+		});
+		startOrQueue(thread);
+		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
+	}
+	
+	/*
+	 * Error handling
+	 */
 	
 	/**
 	 * @see #catchRun(Consumer, String)
@@ -344,6 +423,10 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
+	/*
+	 * Private tools
+	 */
+	
 	private void arriveAndStartNextThread(@Nullable Thread next) {
 		phaser.arriveAndDeregister();
 		if (next == null || holdState.get()) return;
@@ -361,6 +444,10 @@ public class VirtualPromise<T> {
 	private String constructName(String threadName, String defaultName) {
 		return "%s: [%s]".formatted(pipelineName.get(), threadName == null ? defaultName : threadName);
 	}
+	
+	/*
+	 * Handling
+	 */
 	
 	/**
 	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional.

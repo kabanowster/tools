@@ -150,9 +150,9 @@ public class Tools {
 		).toList();
 	}
 	
-	public <T, A extends Annotation> T getFirstAnnotadedValue(Class<A> annotationClass, Class<T> returnType, Object invokedOn) {
+	public <T, A extends Annotation> T getFirstAnnotadedValue(Class<A> annotation, Class<T> returnType, Object invokedOn) {
 		try {
-			return getAnnotadedValues(annotationClass, returnType, invokedOn).getFirst();
+			return getAnnotadedValues(annotation, returnType, invokedOn).getFirst();
 		} catch (NoSuchElementException e) {
 			return null;
 		}

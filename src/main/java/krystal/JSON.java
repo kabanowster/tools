@@ -20,17 +20,20 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Class wrapping {@link JSONObject} utilities, allowing for deep (de)serialization of objects.
+ * Class wrapping {@link JSONObject} - utilities for deep (de)serialization of objects.
+ *
+ * @see #from(Object)
+ * @see #into(Object, Class, Type...)
  */
 @UtilityClass
 @Log4j2
 public class JSON {
 	
 	/**
-	 * Serialize Object into {@link JSONObject}. Fields marked with {@link Skipson Skipson} will be skipped.
+	 * Serialize Object into {@link JSONObject}. Fields marked with {@link Skipson @Skipson} will be skipped.
 	 *
 	 * @param obj
-	 *        {@link Collection}, {@link Map}, array or object of class marked with {@link Flattison Flattison}.
+	 *        {@link Collection}, {@link Map}, array or object of class marked with {@link Flattison @Flattison}.
 	 * @return If null obj provided - will return empty {@link JSONObject}.
 	 */
 	public JSONObject from(Object obj) {
@@ -58,8 +61,8 @@ public class JSON {
 			return flattisonMap;
 		} else if (Collection.class.isAssignableFrom(clazz) || clazz.isArray()) {
 			return (clazz.isArray() ? Stream.of((Object[]) obj) : ((Collection<?>) obj).stream())
-					.map(JSON::flattison)
-					.toList();
+					       .map(JSON::flattison)
+					       .toList();
 		} else if (clazz.isAnnotationPresent(Flattison.class)) {
 			val fieldsMap = new LinkedHashMap<>(); // nullable values
 			
@@ -82,16 +85,17 @@ public class JSON {
 	}
 	
 	/**
-	 * Use this function to deserialize JSON object into provided {@link Flattison Flattison} class and recursively it's members. Also works with collections and arrays. {@link Flattison Flattison} classes require No-Args constructor. Fields that can not
-	 * be written due to type conflicts (i.e. Interfaces or Enums), will use regular setters (methods with names starting with "set", followed by field name, case-insensitive) or methods marked as {@link Deserializer Deserializer}. Unresolved conflicts or
-	 * missing values will be skipped, as well as fields marked with {@link Skipson Skipson}.
+	 * Use this function to deserialize JSON object into provided {@link Flattison @Flattison} class and recursively it's members. Also works with collections and arrays. {@link Flattison @Flattison} classes require No-Args constructor. Fields, that can
+	 * not be written due to type conflicts (i.e. Interfaces or Enums), will use regular setters (methods with names starting with "set", followed by field name, case-insensitive) or methods marked as {@link Deserializer @Deserializer}. Unresolved
+	 * conflicts
+	 * or missing values will be skipped, as well as fields marked with {@link Skipson @Skipson}.
 	 *
 	 * @param json
-	 *        {@link JSONObject}, {@link JSONArray} or object of class marked with {@link Flattison Flattison}. Otherwise, this function returns object as it is;
+	 *        {@link JSONObject}, {@link JSONArray} or object of class marked with {@link Flattison @Flattison}. Otherwise, this function returns object as it is;
 	 * @param clazz
 	 * 		Class of the provided json object to be deserialized into;
 	 * @param innerTypes
-	 * 		If the provided json object is a collection, this parameter is mandatory to determine the classes of the child elements, otherwise it is determined automatically.
+	 * 		If the provided json object is a collection, this parameter is mandatory to determine the classes of the child elements. In other cases, can be skipped.
 	 */
 	public Object into(Object json, Class<?> clazz, Type... innerTypes) {
 		
@@ -222,7 +226,7 @@ public class JSON {
 	}
 	
 	/**
-	 * Mark class that will be (de-)serialized to/from JSON using fields values directly and recursively - for {@link Flattison Flattison} objects and collections members.
+	 * Mark class that will be (de-)serialized to/from JSON using fields values directly and recursively - for {@link Flattison @Flattison} objects and collections members.
 	 */
 	@Target(ElementType.TYPE)
 	@Retention(RetentionPolicy.RUNTIME)
@@ -240,7 +244,7 @@ public class JSON {
 	}
 	
 	/**
-	 * Mark setter method to be used in deserialization for the given field. Usable for fields of type other than {@link Map}, {@link Collection} types or {@link Flattison Flattison} class and outside primitive scope. I.e. Interfaces and Enums.
+	 * Mark setter method to be used in deserialization for the given field. Usable for fields of type other than {@link Map}, {@link Collection} types or {@link Flattison @Flattison} class and outside primitive scope. I.e. Interfaces and Enums.
 	 */
 	@Target(ElementType.METHOD)
 	@Retention(RetentionPolicy.RUNTIME)

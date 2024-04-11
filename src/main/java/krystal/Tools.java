@@ -6,6 +6,7 @@ import lombok.experimental.UtilityClass;
 import lombok.extern.log4j.Log4j2;
 import lombok.val;
 
+import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
@@ -125,12 +126,18 @@ public class Tools {
 		return Optional.ofNullable(loadResource(concatAsURIPath(path)));
 	}
 	
+	/**
+	 * Retrieve the values of {@code returnType} for {@code annotation} annotated fields or methods within {@code invokedClass} of {@code invokedOn} object.
+	 *
+	 * @param invokedOn
+	 * 		acceptable {@code null} only in case of the annotated static method or field. Will throw {@link NullPointerException} otherwise.
+	 */
 	@SuppressWarnings("unchecked")
-	public <T, A extends Annotation> List<T> getAnnotadedValues(Class<A> annotationClass, Class<T> returnType, Object invokedOn) {
+	public <I, T, A extends Annotation> List<T> getAnnotatedValues(Class<A> annotation, Class<T> returnType, Class<? extends I> invokedClass, @Nullable I invokedOn) {
 		
 		return Stream.concat(
-				Stream.of(invokedOn.getClass().getDeclaredFields())
-				      .filter(f -> f.isAnnotationPresent(annotationClass) && returnType.isAssignableFrom(f.getType()) && f.trySetAccessible())
+				Stream.of(invokedClass.getDeclaredFields())
+				      .filter(f -> f.isAnnotationPresent(annotation) && returnType.isAssignableFrom(f.getType()) && f.trySetAccessible())
 				      .map(f -> {
 					      try {
 						      return (T) f.get(invokedOn);
@@ -138,8 +145,8 @@ public class Tools {
 						      throw new RuntimeException(e);
 					      }
 				      }),
-				Stream.of(invokedOn.getClass().getDeclaredMethods())
-				      .filter(m -> m.isAnnotationPresent(annotationClass) && returnType.isAssignableFrom(m.getReturnType()) && m.trySetAccessible())
+				Stream.of(invokedClass.getDeclaredMethods())
+				      .filter(m -> m.isAnnotationPresent(annotation) && returnType.isAssignableFrom(m.getReturnType()) && m.trySetAccessible())
 				      .map(m -> {
 					      try {
 						      return (T) m.invoke(invokedOn);
@@ -150,12 +157,22 @@ public class Tools {
 		).toList();
 	}
 	
-	public <T, A extends Annotation> T getFirstAnnotadedValue(Class<A> annotation, Class<T> returnType, Object invokedOn) {
+	/**
+	 * @see #getAnnotatedValues(Class, Class, Class, Object)
+	 */
+	public <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, Class<? extends I> invokedClass, @Nullable I invokedOn) {
 		try {
-			return getAnnotadedValues(annotation, returnType, invokedOn).getFirst();
+			return getAnnotatedValues(annotation, returnType, invokedClass, invokedOn).getFirst();
 		} catch (NoSuchElementException e) {
 			return null;
 		}
+	}
+	
+	/**
+	 * @see #getAnnotatedValues(Class, Class, Class, Object)
+	 */
+	public <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, I invokedOn) {
+		return getFirstAnnotatedValue(annotation, returnType, invokedOn.getClass(), invokedOn);
 	}
 	
 }

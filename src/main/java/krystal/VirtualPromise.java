@@ -392,7 +392,8 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread(threads.poll());
 		});
 		startOrQueue(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), phaser, activeWorker, exception, holdState, pipelineName, timeout);
+		return this;
+		// return new VirtualPromise<>(threads, new AtomicReference<>(), phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
 	/**
@@ -416,6 +417,29 @@ public class VirtualPromise<T> {
 				}
 			} catch (Exception e) {
 				exception.set(e);
+			}
+			arriveAndStartNextThread(threads.poll());
+		});
+		startOrQueue(thread);
+		return this;
+	}
+	
+	/**
+	 * @see #catchThrow(String)
+	 */
+	public VirtualPromise<T> catchThrow() {
+		return catchThrow(null);
+	}
+	
+	/**
+	 * Resolve held exception by throwing {@link RuntimeException}.
+	 */
+	public VirtualPromise<T> catchThrow(@Nullable String threadName) {
+		phaser.register();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "catchthrow")).unstarted(() -> {
+			val ex = exception.get();
+			if (ex != null) {
+				throw new RuntimeException(ex);
 			}
 			arriveAndStartNextThread(threads.poll());
 		});

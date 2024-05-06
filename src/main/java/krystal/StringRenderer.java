@@ -1,9 +1,16 @@
 package krystal;
 
 import com.google.common.base.Strings;
+import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 import lombok.val;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -55,6 +62,33 @@ public class StringRenderer {
 	}
 	
 	/**
+	 * Renders provided objects fields as ASCII table.
+	 *
+	 * @see SkipRender @SkipRender
+	 * @see #renderTable(List, List)
+	 */
+	public <T> String renderObjects(@NonNull List<T> objects) {
+		if (objects.isEmpty()) return "StringRenderer: Provided list of objects is empty";
+		val clazz = objects.getFirst().getClass();
+		val columns = Arrays.stream(clazz.getDeclaredFields()).filter(f -> !f.isAnnotationPresent(SkipRender.class)).map(Field::getName).toList();
+		val rows = objects.stream()
+		                  .map(o -> columns.stream()
+		                                   .map(c -> {
+			                                   try {
+				                                   val f = clazz.getDeclaredField(c);
+				                                   f.setAccessible(true);
+				                                   return String.valueOf(f.get(o));
+			                                   } catch (NoSuchFieldException | IllegalAccessException e) {
+				                                   return "Exception!";
+			                                   }
+		                                   })
+		                                   .toList())
+		                  .toList();
+		
+		return StringRenderer.renderTable(columns, rows);
+	}
+	
+	/**
 	 * Given the rows and columns, calculates the minimum widths for each column based on maximum lengths of values in each row.
 	 */
 	public List<Integer> calculateMinWidths(List<String> columns, List<List<String>> rows) {
@@ -74,6 +108,15 @@ public class StringRenderer {
 		      });
 		
 		return minWidths.values().stream().toList();
+	}
+	
+	/**
+	 * Mark fields which will be filtered-out for {@link #renderObjects(List)};
+	 */
+	@Target(ElementType.FIELD)
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface SkipRender {
+	
 	}
 	
 }

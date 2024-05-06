@@ -149,11 +149,11 @@ public class VirtualPromise<T> {
 	 * Intermediate methods
 	 */
 	
-	public VirtualPromise<T> thenRun(Runnable runnable) {
+	public VirtualPromise<Void> thenRun(Runnable runnable) {
 		return thenRun(runnable, null);
 	}
 	
-	public VirtualPromise<T> thenRun(Runnable runnable, @Nullable String threadName) {
+	public VirtualPromise<Void> thenRun(Runnable runnable, @Nullable String threadName) {
 		phaser.register();
 		val thread = Thread.ofVirtual().name(constructName(threadName, "thenRun")).unstarted(() -> {
 			try {
@@ -362,6 +362,52 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, newState, phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
+	public <R> VirtualPromise<Void> acceptFork(Function<T, Stream<R>> streamSupplier, Consumer<R> elementConsumer) {
+		return acceptFork(streamSupplier, elementConsumer, null);
+	}
+	
+	public <R> VirtualPromise<Void> acceptFork(Function<T, Stream<R>> streamSupplier, Consumer<R> elementConsumer, @Nullable String threadName) {
+		phaser.register();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "acceptFork")).unstarted(() -> {
+			try {
+				activeWorker.set(Thread.currentThread());
+				
+				if (exception.get() == null) {
+					val object = objectState.get();
+					val elementsCount = streamSupplier.apply(object).mapToInt(e -> 1).sum();
+					val counter = new AtomicInteger();
+					
+					// split to the fork
+					streamSupplier.apply(object).forEach(
+							o -> {
+								Thread.ofVirtual().start(() -> {
+									try {
+										if (exception.get() == null) {
+											elementConsumer.accept(o);
+											counter.getAndIncrement();
+										}
+									} catch (Exception e) {
+										exception.set(e);
+										activeWorker.get().interrupt();
+									}
+								});
+							});
+					
+					// monitor the fork done
+					while (counter.get() != elementsCount) {
+						Thread.sleep(100);
+					}
+					
+				}
+			} catch (Exception e) {
+				exception.compareAndSet(null, e);
+			}
+			arriveAndStartNextThread(threads.poll());
+		});
+		startOrQueue(thread);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), phaser, activeWorker, exception, holdState, pipelineName, timeout);
+	}
+	
 	/*
 	 * Error handling
 	 */
@@ -393,7 +439,6 @@ public class VirtualPromise<T> {
 		});
 		startOrQueue(thread);
 		return this;
-		// return new VirtualPromise<>(threads, new AtomicReference<>(), phaser, activeWorker, exception, holdState, pipelineName, timeout);
 	}
 	
 	/**
@@ -404,7 +449,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Resolve like {@link #catchRun(Consumer)}, but instead consuming the exceptions, supply the pipeline.
+	 * Resolve like {@link #catchRun(Consumer)}, but instead consuming the exception, supply the pipeline.
 	 */
 	public VirtualPromise<T> catchSupply(Function<Throwable, T> consumeAndSupplyFunction, @Nullable String threadName) {
 		phaser.register();
@@ -432,7 +477,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Resolve held exception by throwing {@link RuntimeException}.
+	 * Resolve held exception (if any) by throwing {@link RuntimeException}.
 	 */
 	public VirtualPromise<T> catchThrow(@Nullable String threadName) {
 		phaser.register();
@@ -474,7 +519,7 @@ public class VirtualPromise<T> {
 	 */
 	
 	/**
-	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional.
+	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object.
 	 *
 	 * @see #getHoldState()
 	 */
@@ -484,7 +529,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * {@link #join()} and any uncaught exceptions will throw here.
+	 * {@link #join()} and any uncaught exceptions will throw here as {@link ExecutionException}, allowing manual catch processing.
 	 */
 	public Optional<T> joinExceptionally() throws ExecutionException {
 		if (!holdState.get()) phaser.arriveAndAwaitAdvance();
@@ -493,6 +538,13 @@ public class VirtualPromise<T> {
 			throw new ExecutionException(ex);
 		}
 		return Optional.ofNullable(objectState.get());
+	}
+	
+	/**
+	 * Effectively {@link #catchThrow()} and {@link #join()}, wrapped together.
+	 */
+	public Optional<T> joinThrow() {
+		return this.catchThrow().join();
 	}
 	
 	public @Nullable Throwable getException() {

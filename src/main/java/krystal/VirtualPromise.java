@@ -250,10 +250,9 @@ public class VirtualPromise<T> {
 		val newState = new AtomicReference<R>();
 		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
 			try {
-				val otherPromise = function.apply(objectState.get());
-				val otherState = otherPromise.joinThrow();
+				val otherState = function.apply(objectState.get()).catchRun(this::setException).join();
 				if (exception.get() == null) newState.set(otherState.orElse(null));
-			} catch (RuntimeException e) {
+			} catch (Exception e) {
 				setException(e);
 			}
 			arriveAndStartNextThread();
@@ -274,9 +273,9 @@ public class VirtualPromise<T> {
 		val newState = new AtomicReference<R>();
 		val thread = Thread.ofVirtual().name(constructName(threadName, "combine")).unstarted(() -> {
 			try {
-				val otherState = otherPromise.joinThrow();
+				val otherState = otherPromise.catchRun(this::setException).join();
 				if (exception.get() == null) newState.set(combiner.apply(otherState.orElse(null), objectState.get()));
-			} catch (RuntimeException e) {
+			} catch (Exception e) {
 				setException(e);
 			}
 			arriveAndStartNextThread();
@@ -294,16 +293,42 @@ public class VirtualPromise<T> {
 		val newState = new AtomicReference<R>();
 		val thread = Thread.ofVirtual().name(constructName(threadName, "combineFlat")).unstarted(() -> {
 			try {
+				val otherState = otherPromise.catchRun(this::setException).join();
 				if (exception.get() == null) {
-					newState.set(returnedPromise.apply(otherPromise.joinThrow().orElse(null), objectState.get()).joinThrow().orElse(null));
+					newState.set(returnedPromise.apply(otherState.orElse(null), objectState.get()).catchRun(this::setException).join().orElse(null));
 				}
-			} catch (RuntimeException e) {
+			} catch (Exception e) {
 				setException(e);
 			}
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
 		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+	}
+	
+	public VirtualPromise<Void> thenForkJoin(VirtualPromise<?>... promises) {
+		return thenForkJoin(null, promises);
+	}
+	
+	public VirtualPromise<Void> thenForkJoin(@Nullable String threadName, VirtualPromise<?>... promises) {
+		stepsCount.getAndIncrement();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "thenForkJoin")).unstarted(() -> {
+			try {
+				Stream.of(promises)
+				      .map(p -> {
+					      p.join();
+					      return p.getException();
+				      })
+				      .filter(Objects::nonNull)
+				      .findAny()
+				      .ifPresent(exception::set);
+			} catch (Exception e) {
+				setException(e);
+			}
+			arriveAndStartNextThread();
+		});
+		threads.offer(thread);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
 	}
 	
 	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper) {

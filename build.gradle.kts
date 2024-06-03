@@ -5,10 +5,11 @@ plugins {
 }
 
 group = "io.krystal"
-version = "1.4.1"
+version = "1.4.5"
 
 java {
     withJavadocJar()
+    withSourcesJar()
 }
 
 dependencies {

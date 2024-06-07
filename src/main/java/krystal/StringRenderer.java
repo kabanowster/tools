@@ -10,10 +10,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Field;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -52,7 +51,7 @@ public class StringRenderer {
 		
 		result.append("*| ");
 		for (int i = 0; i < minWidths.size(); i++) {
-			result.append(Strings.padEnd(row.get(i), minWidths.get(i), ' '));
+			result.append(Strings.padEnd(Strings.nullToEmpty(row.get(i)), minWidths.get(i), ' '));
 			if (i < minWidths.size() - 1)
 				result.append(" | ");
 		}
@@ -67,8 +66,8 @@ public class StringRenderer {
 	 * @see SkipRender @SkipRender
 	 * @see #renderTable(List, List)
 	 */
-	public <T> String renderObjects(@NonNull List<T> objects) {
-		if (objects.isEmpty()) return "StringRenderer: Provided list of objects is empty";
+	public String renderObjects(@NonNull List<?> objects) {
+		if (objects.isEmpty()) return "StringRenderer: Provided list of objects is empty.";
 		val clazz = objects.getFirst().getClass();
 		val columns = Arrays.stream(clazz.getDeclaredFields()).filter(f -> !f.isAnnotationPresent(SkipRender.class)).map(Field::getName).toList();
 		val rows = objects.stream()
@@ -85,7 +84,46 @@ public class StringRenderer {
 		                                   .toList())
 		                  .toList();
 		
-		return StringRenderer.renderTable(columns, rows);
+		return renderTable(columns, rows);
+	}
+	
+	/**
+	 * Renders provided 2D {@link Map} {@code Map<?, Map<?, ?>>} as ASCII table.
+	 * The number of columns is derived from number of distinct elements (keys) of second dimension Maps.
+	 * Second dimension Maps do not have to hold equal numbers of elements.
+	 * Uses {@link String#valueOf(Object)} to render values.
+	 */
+	public String render2DMap(@NonNull Map<?, Map<?, ?>> map) {
+		if (map.isEmpty()) return "StringRenderer: Provided 2D map is empty.";
+		
+		val mapCastedToString = map.entrySet().stream().collect(Collectors.toMap(
+				Entry::getKey,
+				e -> e.getValue().entrySet().stream().collect(Collectors.toMap(
+						e2 -> String.valueOf(e2.getKey()),
+						e2 -> String.valueOf(e2.getValue()),
+						(a, b) -> a,
+						HashMap::new
+				))
+		));
+		
+		val columns = mapCastedToString.values().stream()
+		                               .flatMap(m -> m.keySet().stream())
+		                               .distinct()
+		                               .collect(Collectors.toCollection(LinkedList::new));
+		
+		val firstColumn = map.keySet().stream().findAny().map(o -> o.getClass().getSimpleName()).orElse("Key object");
+		columns.addFirst(firstColumn);
+		
+		val rows = mapCastedToString.entrySet()
+		                            .stream()
+		                            .map(e -> {
+			                            val entries = e.getValue();
+			                            entries.put(firstColumn, String.valueOf(e.getKey()));
+			                            return columns.stream().map(entries::get).toList();
+		                            })
+		                            .toList();
+		
+		return renderTable(columns, rows);
 	}
 	
 	/**
@@ -97,8 +135,9 @@ public class StringRenderer {
 		
 		for (int i = 0; i < c; i++) minWidths.put(i, Integer.MIN_VALUE);
 		
-		Stream.of(List.of(columns), rows).flatMap(Collection::stream)
-		      .map(l -> l.stream().map(String::length).toList())
+		Stream.of(List.of(columns), rows)
+		      .flatMap(Collection::stream)
+		      .map(l -> l.stream().map(s -> s == null ? 0 : s.length()).toList())
 		      .forEach(s -> {
 			      for (int i = 0; i < c; i++) {
 				      val width = s.get(i);

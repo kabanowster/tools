@@ -306,6 +306,9 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
 	}
 	
+	/**
+	 * @see #thenFork(String, VirtualPromise[])
+	 */
 	public VirtualPromise<Void> thenFork(VirtualPromise<?>... promises) {
 		return thenFork(null, promises);
 	}
@@ -334,6 +337,9 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
 	}
 	
+	/**
+	 * @see #thenFork(Supplier, String)
+	 */
 	public VirtualPromise<Void> thenFork(Supplier<Stream<VirtualPromise<?>>> promises) {
 		return thenFork(promises, null);
 	}
@@ -366,6 +372,10 @@ public class VirtualPromise<T> {
 		return mapFork(streamSupplier, elementMapper, null);
 	}
 	
+	/**
+	 * @param elementMapper
+	 * 		Throws {@link NullPointerException} if the return of this {@link Function} is {@code null} or of {@link Void} type.
+	 */
 	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper, @Nullable String threadName) {
 		stepsCount.getAndIncrement();
 		val newState = new AtomicReference<Stream<R>>();
@@ -383,6 +393,7 @@ public class VirtualPromise<T> {
 								val i = counter.getAndIncrement();
 								Thread.ofVirtual().start(() -> {
 									try {
+										// elementMapper can not return null or will throw
 										if (exception.get() == null) result.put(i, elementMapper.apply(o));
 									} catch (Exception e) {
 										setException(e);
@@ -718,6 +729,10 @@ public class VirtualPromise<T> {
 	 */
 	public String getActiveVirtualName() {
 		return activeWorker.get().getName();
+	}
+	
+	public VirtualPromise<Void> toVoid() {
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
 	}
 	
 	/*

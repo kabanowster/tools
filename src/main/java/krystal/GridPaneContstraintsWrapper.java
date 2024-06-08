@@ -298,18 +298,11 @@ public class GridPaneContstraintsWrapper<T extends GridPane> {
 	}
 	
 	private int columnIndex() {
-		if (relCol)
-			columnIndex++;
-		return columnIndex;
-		
-		// return relCol == true ? columnIndex++ : columnIndex;
-		// this produces error, seems like value is not getting added before return...
+		return relCol ? ++columnIndex : columnIndex;
 	}
 	
 	private int rowIndex() {
-		if (relRow)
-			rowIndex++;
-		return rowIndex;
+		return relRow ? ++rowIndex : rowIndex;
 	}
 	
 }

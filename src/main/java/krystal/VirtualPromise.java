@@ -397,20 +397,20 @@ public class VirtualPromise<T> {
 										if (exception.get() == null) result.put(i, elementMapper.apply(o));
 									} catch (Exception e) {
 										setException(e);
-										activeWorker.get().interrupt();
 									}
 								});
 							});
 					
 					// monitor the fork done
-					while (result.size() != elementsCount) {
+					while (result.size() != elementsCount && exception.get() == null) {
 						Thread.sleep(threadSleepDuration);
 					}
 					
-					newState.set(result.entrySet()
-					                   .stream()
-					                   .sorted(Comparator.comparingInt(Entry::getKey))
-					                   .map(Entry::getValue));
+					if (exception.get() == null)
+						newState.set(result.entrySet()
+						                   .stream()
+						                   .sorted(Comparator.comparingInt(Entry::getKey))
+						                   .map(Entry::getValue));
 				}
 			} catch (Exception e) {
 				exception.compareAndSet(null, e);

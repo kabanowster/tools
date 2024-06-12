@@ -8,7 +8,7 @@ import lombok.val;
 
 import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
-import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.*;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -173,6 +173,36 @@ public class Tools {
 	 */
 	public <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, I invokedOn) {
 		return getFirstAnnotatedValue(annotation, returnType, invokedOn.getClass(), invokedOn);
+	}
+	
+	/**
+	 * Splits given class type into raw class and type arguments.
+	 *
+	 * @return Tuple of Class and populated Type[] if any, empty otherwise. I.e. {@code List<Map<String,Set>>} returns {@code Pair<List, Map<String,Set>>}.
+	 * @implNote Reflection methods to return {@link ParameterizedType}: {@link Method#getGenericReturnType()}, {@link Field#getGenericType()}.
+	 */
+	public TypesPair determineParameterTypes(Type elementType) {
+		Class<?> elementClass = Objects.class;
+		var arguments = new Type[0];
+		
+		if (elementType == null) return new TypesPair(elementClass, arguments);
+		
+		try {
+			if (elementType instanceof ParameterizedType t) {
+				elementClass = Class.forName(t.getRawType().getTypeName());
+				arguments = t.getActualTypeArguments();
+			} else {
+				elementClass = Class.forName(elementType.getTypeName());
+			}
+			
+		} catch (ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
+		return new TypesPair(elementClass, arguments);
+	}
+	
+	public record TypesPair(Class<?> clazz, Type[] types) {
+	
 	}
 	
 }

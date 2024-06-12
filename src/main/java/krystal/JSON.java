@@ -103,7 +103,7 @@ public class JSON {
 			// value is a collection of List or Set
 			
 			val collection = Set.class.isAssignableFrom(clazz) ? new LinkedHashSet<>() : new LinkedList<>();
-			val types = innerTypes.length == 1 ? determineTypes(innerTypes[0]) : determineTypes(null);
+			val types = innerTypes.length == 1 ? Tools.determineParameterTypes(innerTypes[0]) : Tools.determineParameterTypes(null);
 			
 			for (var element : jsonArray) collection.add(into(element, types.clazz(), types.types()));
 			return clazz.isArray() ? collection.toArray((Object[]) Array.newInstance(clazz.getComponentType(), collection.size())) : collection;
@@ -116,7 +116,7 @@ public class JSON {
 				// value is a declared map
 				
 				val map = new LinkedHashMap<>();
-				val types = innerTypes.length == 2 ? determineTypes(innerTypes[1]) : determineTypes(null);
+				val types = innerTypes.length == 2 ? Tools.determineParameterTypes(innerTypes[1]) : Tools.determineParameterTypes(null);
 				
 				for (var element : jsonObject.keySet())
 					map.put(element, into(jsonObject.get(element), types.clazz(), types.types()));
@@ -194,35 +194,6 @@ public class JSON {
 		}
 		
 		return null;
-	}
-	
-	/**
-	 * Splits given class type into raw class and type arguments.
-	 *
-	 * @return Tuple of Class and populated Type[] if any, empty otherwise. I.e. {@code List<Map<String,Set>>} returns {@code Pair<List, Map<String,Set>>}.
-	 */
-	private TypesPair determineTypes(Type elementType) {
-		Class<?> elementClass = Objects.class;
-		var arguments = new Type[0];
-		
-		if (elementType == null) return new TypesPair(elementClass, arguments);
-		
-		try {
-			if (elementType instanceof ParameterizedType t) {
-				elementClass = Class.forName(t.getRawType().getTypeName());
-				arguments = t.getActualTypeArguments();
-			} else {
-				elementClass = Class.forName(elementType.getTypeName());
-			}
-			
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException(e);
-		}
-		return new TypesPair(elementClass, arguments);
-	}
-	
-	private record TypesPair(Class<?> clazz, Type[] types) {
-	
 	}
 	
 	/**

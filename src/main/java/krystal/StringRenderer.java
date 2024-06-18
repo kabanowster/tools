@@ -101,9 +101,11 @@ public class StringRenderer {
 				e -> e.getValue().entrySet().stream().collect(Collectors.toMap(
 						e2 -> String.valueOf(e2.getKey()),
 						e2 -> String.valueOf(e2.getValue()),
-						(a, b) -> a,
-						HashMap::new
-				))
+						(a, _) -> a,
+						LinkedHashMap::new
+				)),
+				(a, _) -> a,
+				LinkedHashMap::new
 		));
 		
 		val columns = mapCastedToString.values().stream()
@@ -122,6 +124,38 @@ public class StringRenderer {
 			                            return columns.stream().map(entries::get).toList();
 		                            })
 		                            .toList();
+		
+		return renderTable(columns, rows);
+	}
+	
+	/**
+	 * Renders provided {@link Collection} of {@link Map Maps} as ASCII table.
+	 * The number of columns is derived from number of distinct elements (keys) of Maps.
+	 * Maps do not have to hold equal numbers of elements.
+	 * Uses {@link String#valueOf(Object)} to render values.
+	 */
+	public String renderMaps(@NonNull Collection<Map<?, ?>> list) {
+		if (list.isEmpty()) return "StringRenderer: Provided list of maps is empty.";
+		
+		val listCastedToString = list.stream()
+		                             .map(map -> map.entrySet().stream()
+		                                            .collect(Collectors.toMap(
+				                                            e -> String.valueOf(e.getKey()),
+				                                            e -> String.valueOf(e.getValue()),
+				                                            (a, _) -> a,
+				                                            LinkedHashMap::new
+		                                            ))
+		                             )
+		                             .toList();
+		
+		val columns = listCastedToString.stream()
+		                                .flatMap(m -> m.keySet().stream())
+		                                .distinct()
+		                                .collect(Collectors.toCollection(LinkedList::new));
+		
+		val rows = listCastedToString.stream()
+		                             .map(m -> columns.stream().map(m::get).toList())
+		                             .toList();
 		
 		return renderTable(columns, rows);
 	}

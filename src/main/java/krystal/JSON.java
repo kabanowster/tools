@@ -1,5 +1,6 @@
 package krystal;
 
+import krystal.Skip.SkipTypes;
 import lombok.experimental.UtilityClass;
 import lombok.extern.log4j.Log4j2;
 import lombok.val;
@@ -30,7 +31,7 @@ import java.util.stream.Stream;
 public class JSON {
 	
 	/**
-	 * Serialize Object into {@link JSONObject}. Fields marked with {@link Skipson @Skipson} will be skipped.
+	 * Serialize Object into {@link JSONObject}. Fields marked with {@link Skip @Skip} will be skipped.
 	 *
 	 * @param obj
 	 *        {@link Collection}, {@link Map}, array or object of class marked with {@link Flattison @Flattison}.
@@ -68,7 +69,7 @@ public class JSON {
 			
 			Stream.of(clazz.getDeclaredFields())
 			      .forEach(f -> {
-				      if (f.isAnnotationPresent(Skipson.class)) return;
+				      if (Tools.isSkipped(f, SkipTypes.skipson)) return;
 				      
 				      Object value = null;
 				      if (f.trySetAccessible()) {
@@ -88,7 +89,7 @@ public class JSON {
 	 * Use this function to deserialize JSON object into provided {@link Flattison @Flattison} class and recursively it's members. Also works with collections and arrays. {@link Flattison @Flattison} classes require No-Args constructor. Fields, that can
 	 * not be written due to type conflicts (i.e. Interfaces or Enums), will use regular setters (methods with names starting with "set", followed by field name, case-insensitive) or methods marked as {@link Deserializer @Deserializer}. Unresolved
 	 * conflicts
-	 * or missing values will be skipped, as well as fields marked with {@link Skipson @Skipson}.
+	 * or missing values will be skipped, as well as fields marked with {@link Skip @Skip}.
 	 *
 	 * @param json
 	 *        {@link JSONObject}, {@link JSONArray} or object of class marked with {@link Flattison @Flattison}. Otherwise, this function returns object as it is;
@@ -153,7 +154,7 @@ public class JSON {
 							      ));
 					
 					Stream.of(clazz.getDeclaredFields())
-					      .filter(f -> !f.isAnnotationPresent(Skipson.class) && f.trySetAccessible())
+					      .filter(f -> !Tools.isSkipped(f, SkipTypes.skipson) && f.trySetAccessible())
 					      .forEach(f -> {
 						      val name = f.getName();
 						      val type = f.getType();
@@ -202,15 +203,6 @@ public class JSON {
 	@Target(ElementType.TYPE)
 	@Retention(RetentionPolicy.RUNTIME)
 	public @interface Flattison {
-	
-	}
-	
-	/**
-	 * Mark fields to be skipped in (de-)serializations.
-	 */
-	@Target(ElementType.FIELD)
-	@Retention(RetentionPolicy.RUNTIME)
-	public @interface Skipson {
 	
 	}
 	

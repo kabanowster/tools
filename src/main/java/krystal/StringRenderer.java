@@ -1,14 +1,11 @@
 package krystal;
 
 import com.google.common.base.Strings;
+import krystal.Skip.SkipTypes;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 import lombok.val;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.Map.Entry;
@@ -63,13 +60,13 @@ public class StringRenderer {
 	/**
 	 * Renders provided objects fields as ASCII table.
 	 *
-	 * @see SkipRender @SkipRender
+	 * @see Skip
 	 * @see #renderTable(List, List)
 	 */
-	public String renderObjects(@NonNull List<?> objects) {
+	public <T> String renderObjects(@NonNull List<T> objects) {
 		if (objects.isEmpty()) return "StringRenderer: Provided list of objects is empty.";
 		val clazz = objects.getFirst().getClass();
-		val columns = Arrays.stream(clazz.getDeclaredFields()).filter(f -> !f.isAnnotationPresent(SkipRender.class)).map(Field::getName).toList();
+		val columns = Arrays.stream(clazz.getDeclaredFields()).filter(f -> !Tools.isSkipped(f, SkipTypes.render)).map(Field::getName).toList();
 		val rows = objects.stream()
 		                  .map(o -> columns.stream()
 		                                   .map(c -> {
@@ -93,7 +90,7 @@ public class StringRenderer {
 	 * Second dimension Maps do not have to hold equal numbers of elements.
 	 * Uses {@link String#valueOf(Object)} to render values.
 	 */
-	public String render2DMap(@NonNull Map<?, Map<?, ?>> map) {
+	public <A, B, C> String render2DMap(@NonNull Map<A, Map<B, C>> map) {
 		if (map.isEmpty()) return "StringRenderer: Provided 2D map is empty.";
 		
 		val mapCastedToString = map.entrySet().stream().collect(Collectors.toMap(
@@ -129,12 +126,12 @@ public class StringRenderer {
 	}
 	
 	/**
-	 * Renders provided {@link Collection} of {@link Map Maps} as ASCII table.
+	 * Renders provided {@link List} of {@link Map Maps} as ASCII table.
 	 * The number of columns is derived from number of distinct elements (keys) of Maps.
 	 * Maps do not have to hold equal numbers of elements.
 	 * Uses {@link String#valueOf(Object)} to render values.
 	 */
-	public String renderMaps(@NonNull Collection<Map<?, ?>> list) {
+	public <A, B> String renderMaps(@NonNull List<Map<A, B>> list) {
 		if (list.isEmpty()) return "StringRenderer: Provided list of maps is empty.";
 		
 		val listCastedToString = list.stream()
@@ -181,15 +178,6 @@ public class StringRenderer {
 		      });
 		
 		return minWidths.values().stream().toList();
-	}
-	
-	/**
-	 * Mark fields which will be filtered-out for {@link #renderObjects(List)};
-	 */
-	@Target(ElementType.FIELD)
-	@Retention(RetentionPolicy.RUNTIME)
-	public @interface SkipRender {
-	
 	}
 	
 }

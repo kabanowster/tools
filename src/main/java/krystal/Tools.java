@@ -1,6 +1,7 @@
 package krystal;
 
 import com.google.common.io.Resources;
+import krystal.Skip.SkipTypes;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 import lombok.extern.log4j.Log4j2;
@@ -201,8 +202,39 @@ public class Tools {
 		return new TypesPair(elementClass, arguments);
 	}
 	
+	/**
+	 * @see #determineParameterTypes(Type)
+	 */
 	public record TypesPair(Class<?> clazz, Type[] types) {
 	
+	}
+	
+	/**
+	 * Checks if the {@link Field} is annotated with {@link Skip @Skip}. If so, evaluates if it should be skipped based on assigned {@link SkipTypes}.
+	 * If {@link SkipTypes} are not specified, just returns {@code true} if the annotation is present.
+	 *
+	 * @see Skip
+	 */
+	public boolean isSkipped(Field field, SkipTypes... typesForField) {
+		val annotation = field.getDeclaredAnnotation(Skip.class);
+		if (annotation == null) return false;
+		
+		val types = List.of(typesForField);
+		val explicitly = annotation.onlyThese();
+		val excludes = annotation.everythingElseBut();
+		
+		if (types.isEmpty() || (explicitly.length == 0 && excludes.length == 0))
+			return true;
+		
+		for (var type : explicitly)
+			if (types.contains(type)) return true;
+		
+		if (excludes.length == 0) return false; // "onlyThese" passed
+		
+		for (var type : excludes)
+			if (types.contains(type)) return false;
+		
+		return true; // "everythingElseBut" passed
 	}
 	
 }

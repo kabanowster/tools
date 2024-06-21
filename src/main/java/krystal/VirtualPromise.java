@@ -1,6 +1,10 @@
 package krystal;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.NonNull;
+import lombok.Setter;
+import lombok.extern.log4j.Log4j2;
+import lombok.val;
 
 import javax.annotation.Nullable;
 import java.time.Duration;
@@ -18,6 +22,7 @@ import java.util.stream.Stream;
 /**
  * Each pipeline execution is a single VirtualThread. The execution starts at first pipeline step declared.
  */
+@Log4j2
 @AllArgsConstructor
 public class VirtualPromise<T> {
 	
@@ -31,17 +36,18 @@ public class VirtualPromise<T> {
 	private final AtomicReference<Thread> queueWatcher;
 	private final AtomicReference<Throwable> exception;
 	/**
-	 * By changing this atomic variable (non-blocking), you can put the further execution of the pipeline into hold. The {@link #activeWorker} thread will finish its tasks but won't trigger the next in line.
+	 * You can put the further execution of the pipeline into hold. The {@link #activeWorker} thread will finish its tasks but won't trigger the next step in line.
 	 *
+	 * @see #setOnHold()
 	 * @see #holdAndGet(Consumer)
 	 */
-	private final @Getter AtomicBoolean holdState;
+	private final AtomicBoolean holdState;
 	/**
 	 * The pipeline name used for debugging.
 	 *
 	 * @see #getActiveVirtualName()
 	 */
-	private final @Getter AtomicReference<String> pipelineName;
+	private final AtomicReference<String> pipelineName;
 	private final AtomicReference<Thread> timeout;
 	
 	private VirtualPromise() {
@@ -536,7 +542,7 @@ public class VirtualPromise<T> {
 	 */
 	public VirtualPromise<T> catchThrow(@Nullable String threadName) {
 		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "catchthrow")).unstarted(() -> {
+		val thread = Thread.ofVirtual().name(constructName(threadName, "catchThrow")).unstarted(() -> {
 			
 			val ex = exception.get();
 			if (ex != null) {
@@ -549,13 +555,57 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Sets the pipeline name for the <b><i>next</i></b> steps.
+	 * Take {@link Consumer} action on current {@link VirtualPromise}.
+	 * I.e. this step can be used to create dependencies on other {@link VirtualPromise}, at the time of evaluation.
 	 *
-	 * @see #as(String)
+	 * @see #mirror(VirtualPromise[])
 	 */
-	public VirtualPromise<T> changeName(String pipelineName) {
-		this.pipelineName.set(pipelineName);
+	public VirtualPromise<T> monitor(Consumer<VirtualPromise<T>> actionOnSelf, @Nullable String threadName) {
+		stepsCount.getAndIncrement();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "monitor")).unstarted(() -> {
+			try {
+				if (exception.get() == null) actionOnSelf.accept(this);
+			} catch (Exception e) {
+				setException(e);
+			}
+			arriveAndStartNextThread();
+		});
+		threads.offer(thread);
 		return this;
+	}
+	
+	/**
+	 * @see #monitor(Consumer, String)
+	 */
+	public VirtualPromise<T> monitor(Consumer<VirtualPromise<T>> actionOnSelf) {
+		return monitor(actionOnSelf, null);
+	}
+	
+	/**
+	 * Monitor and {@link #monitor(Consumer, String) mirror} other promises state, creating dependency to resume execution.
+	 * If the other promises have exceptions or are {@link #isIdle() idle} - {@link #cancelAndDrop()}.
+	 * If they are on {@link #holdState hold} - {@link Thread#sleep(long) wait} until they resume.
+	 */
+	public VirtualPromise<T> mirror(VirtualPromise<?>... others) {
+		return monitor(_ -> {
+			try {
+				for (var promise : others) {
+					if (promise.hasException() || promise.isIdle()) {
+						cancelAndDrop();
+						return;
+					}
+					while (promise.isOnHold()) {
+						if (promise.hasException() || promise.isIdle()) {
+							cancelAndDrop();
+							return;
+						}
+						Thread.sleep(threadSleepDuration);
+					}
+				}
+			} catch (Exception e) {
+				setException(e);
+			}
+		});
 	}
 	
 	/*
@@ -587,7 +637,21 @@ public class VirtualPromise<T> {
 		thread.start();
 	}
 	
-	private void setException(Throwable exc) {
+	/**
+	 * Sets the pipeline name for the <b><i>next</i></b> steps.
+	 *
+	 * @see #as(String)
+	 */
+	public VirtualPromise<T> changeName(String pipelineName) {
+		this.pipelineName.set(pipelineName);
+		return this;
+	}
+	
+	public String getName() {
+		return pipelineName.get();
+	}
+	
+	public void setException(Throwable exc) {
 		exception.set(exc);
 	}
 	
@@ -602,7 +666,7 @@ public class VirtualPromise<T> {
 	/**
 	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object.
 	 *
-	 * @see #getHoldState()
+	 * @see #holdState
 	 */
 	public Optional<T> join() {
 		// phaser.arriveAndAwaitAdvance(); AWAIT ADVANCE IS PINNING VIRTUAL THREADS :(
@@ -620,6 +684,8 @@ public class VirtualPromise<T> {
 	
 	/**
 	 * Effectively {@link #catchThrow()} and {@link #join()}, wrapped together.
+	 *
+	 * @see #holdState
 	 */
 	public Optional<T> joinThrow() {
 		return this.catchThrow().join();
@@ -630,24 +696,10 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * True if all threads in pipeline completed their tasks, and it is ready to return result.
-	 */
-	public boolean isComplete() {
-		return stepsCount.get() == 0;
-	}
-	
-	/**
-	 * True if there is any thread active at the moment.
-	 */
-	public boolean isActive() {
-		return activeWorker.get() != null;
-	}
-	
-	/**
 	 * Join the active worker, hold further pipeline executions, and get the result.
 	 *
+	 * @see #holdState
 	 * @see #join()
-	 * @see #getHoldState()
 	 * @see #resume()
 	 */
 	public Optional<T> holdAndGet(@Nullable Consumer<InterruptedException> handler) {
@@ -665,7 +717,7 @@ public class VirtualPromise<T> {
 	/**
 	 * Interrupt and cancel the current execution and set the pipeline on hold state.
 	 *
-	 * @see #getHoldState()
+	 * @see #holdState
 	 */
 	public void cancel() {
 		holdState.set(true);
@@ -699,11 +751,57 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * If the pipeline is on hold, resume the executions.
-	 *
-	 * @see #getHoldState()
+	 * True if all threads in pipeline completed their tasks, and it is ready to return result.
+	 */
+	public boolean isComplete() {
+		return stepsCount.get() == 0;
+	}
+	
+	/**
+	 * True if there is any thread active at the moment.
+	 */
+	public boolean isActive() {
+		return activeWorker.get() != null;
+	}
+	
+	/**
+	 * Is on hold and has no further steps to follow. I.e. as a result of {@link #cancelAndDrop()}.
+	 */
+	public boolean isIdle() {
+		return isOnHold() && threads.isEmpty();
+	}
+	
+	public boolean hasException() {
+		return exception.get() != null;
+	}
+	
+	/**
+	 * @see #holdState
+	 */
+	public boolean isOnHold() {
+		return holdState.get();
+	}
+	
+	/**
+	 * @see #holdState
+	 */
+	public void setOnHold() {
+		holdState.set(true);
+	}
+	
+	/**
+	 * @see #holdState
 	 */
 	public void resume() {
+		holdState.set(false);
+	}
+	
+	/**
+	 * If the pipeline is on hold, resume the executions by invoking the next thread in line.
+	 *
+	 * @see #holdState
+	 */
+	public void resumeNext() {
 		Optional.ofNullable(queueWatcher.getAndSet(null)).ifPresent(Thread::interrupt);
 		holdState.set(false);
 		takeNextThread();

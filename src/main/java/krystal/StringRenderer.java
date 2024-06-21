@@ -2,13 +2,18 @@ package krystal;
 
 import com.google.common.base.Strings;
 import krystal.Skip.SkipTypes;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 import lombok.experimental.UtilityClass;
+import lombok.extern.log4j.Log4j2;
 import lombok.val;
 
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -178,6 +183,153 @@ public class StringRenderer {
 		      });
 		
 		return minWidths.values().stream().toList();
+	}
+	
+	/**
+	 * Class to create string progress bars.
+	 * {@link #render()} method aims to insert and update the created html element.
+	 * {@link #dispose()} removes the element.
+	 * You can get primitive renderer with {@link #simpleProgressBar()} and utilise {@link #toString(boolean) pure} values output.
+	 */
+	@Log4j2
+	@Getter
+	@Setter
+	public abstract class ProgressRenderer {
+		
+		protected final String id;
+		protected long target;
+		protected long progress;
+		protected String unit;
+		protected List<Elements> elements;
+		
+		public ProgressRenderer() {
+			this.id = UUID.randomUUID().toString();
+			this.target = 100;
+		}
+		
+		public abstract ProgressRenderer render();
+		
+		public abstract void dispose();
+		
+		public ProgressRenderer increment(long progressIncrement) {
+			progress += progressIncrement;
+			render();
+			return this;
+		}
+		
+		public ProgressRenderer update(long setProgress) {
+			progress = setProgress;
+			render();
+			return this;
+		}
+		
+		public static ProgressRenderer simpleProgressBar() {
+			return new ProgressRenderer() {
+				@Override
+				public ProgressRenderer render() {
+					return this;
+				}
+				
+				@Override
+				public void dispose() {
+				}
+			};
+		}
+		
+		public static ProgressRenderer simpleProgressBar(UnaryOperator<ProgressRenderer> renderProgress, Consumer<ProgressRenderer> disposeProgress) {
+			return new ProgressRenderer() {
+				@Override
+				public ProgressRenderer render() {
+					return renderProgress.apply(this);
+				}
+				
+				@Override
+				public void dispose() {
+					disposeProgress.accept(this);
+				}
+			};
+		}
+		
+		/*
+		 * Misc
+		 */
+		
+		public ProgressRenderer without(Elements... elements) {
+			val list = Arrays.stream(elements).toList();
+			this.elements = Arrays.stream(Elements.values()).filter(e -> !list.contains(e)).toList();
+			return this;
+		}
+		
+		/*
+		 * Elements renderers
+		 */
+		
+		@Override
+		public String toString() {
+			return toString(false);
+		}
+		
+		/**
+		 * @param pure
+		 * 		If {@code true}, body won't be enclosed in html tags.
+		 */
+		public String toString(boolean pure) {
+			val pct = Math.round(((float) progress / target) * 100);
+			val meatBall = getLeftIndentElement() + getPercentageElement(pct) + getProgressBarElement(pct) + getCurrentValueElement() + getTargetValueElement() + getUnitElement();
+			if (pure) return meatBall;
+			return "<div id=\"%s\" class=\"progress\"><pre>%s</pre></div>".formatted(getId(), meatBall);
+		}
+		
+		public String getId() {
+			return "progressbar_" + id;
+		}
+		
+		private String getLeftIndentElement() {
+			if (elements != null && !elements.contains(Elements.leftIndent)) return "";
+			return "&#9;";
+		}
+		
+		private String getPercentageElement(long pctValue) {
+			if (elements != null && !elements.contains(Elements.percentage)) return "";
+			return Strings.padStart(String.valueOf(pctValue), 3, ' ') + "%";
+		}
+		
+		private String getProgressBarElement(long pctValue) {
+			if (elements != null && !elements.contains(Elements.progressBar)) return "";
+			
+			val bar = new StringBuilder();
+			for (int i = 1; i <= 100; i++) {
+				if (i < pctValue) {
+					bar.append("=");
+				} else if (i == pctValue) {
+					bar.append(">");
+				} else {
+					bar.append("-");
+				}
+			}
+			
+			return "[%s]".formatted(bar.toString());
+		}
+		
+		private String getCurrentValueElement() {
+			if (elements != null && !elements.contains(Elements.current)) return "";
+			return " " + progress;
+		}
+		
+		private String getTargetValueElement() {
+			if (elements != null && !elements.contains(Elements.target)) return "";
+			return " / " + target;
+		}
+		
+		private String getUnitElement() {
+			if (elements != null && !elements.contains(Elements.unit)) return "";
+			return " " + unit;
+		}
+		
+		public enum Elements {
+			leftIndent, percentage, progressBar, current, target, unit
+		}
+		
 	}
 	
 }

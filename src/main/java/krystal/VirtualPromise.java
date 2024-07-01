@@ -558,7 +558,7 @@ public class VirtualPromise<T> {
 	 * Take {@link Consumer} action on current {@link VirtualPromise}.
 	 * I.e. this step can be used to create dependencies on other {@link VirtualPromise}, at the time of evaluation.
 	 *
-	 * @see #mirror(VirtualPromise[])
+	 * @see #mirror(Supplier)
 	 */
 	public VirtualPromise<T> monitor(Consumer<VirtualPromise<T>> actionOnSelf, @Nullable String threadName) {
 		stepsCount.getAndIncrement();
@@ -586,26 +586,26 @@ public class VirtualPromise<T> {
 	 * If the other promises have exceptions or are {@link #isIdle() idle} - {@link #cancelAndDrop()}.
 	 * If they are on {@link #holdState hold} - {@link Thread#sleep(long) wait} until they resume.
 	 */
-	public VirtualPromise<T> mirror(VirtualPromise<?>... others) {
-		return monitor(_ -> {
-			try {
-				for (var promise : others) {
-					if (promise.hasException() || promise.isIdle()) {
-						cancelAndDrop();
-						return;
-					}
-					while (promise.isOnHold()) {
-						if (promise.hasException() || promise.isIdle()) {
-							cancelAndDrop();
-							return;
-						}
-						Thread.sleep(threadSleepDuration);
-					}
-				}
-			} catch (Exception e) {
-				setException(e);
+	public VirtualPromise<T> mirror(Supplier<Stream<VirtualPromise<?>>> others) {
+		return monitor(_ -> others.get().forEach(promise -> {
+			if (this.isIdle() || hasException()) return;
+			
+			if (promise.hasException() || promise.isIdle()) {
+				cancelAndDrop();
+				return;
 			}
-		});
+			while (promise.isOnHold()) {
+				if (promise.hasException() || promise.isIdle()) {
+					cancelAndDrop();
+					return;
+				}
+				try {
+					Thread.sleep(threadSleepDuration);
+				} catch (Exception e) {
+					setException(e);
+				}
+			}
+		}));
 	}
 	
 	/*
@@ -791,6 +791,7 @@ public class VirtualPromise<T> {
 	
 	/**
 	 * @see #holdState
+	 * @see #resumeNext()
 	 */
 	public void resume() {
 		holdState.set(false);

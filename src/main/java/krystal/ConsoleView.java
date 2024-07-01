@@ -8,14 +8,14 @@ import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.layout.PatternLayout;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicArrowButton;
 import javax.swing.plaf.basic.BasicScrollBarUI;
-import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultCaret;
-import javax.swing.text.Element;
-import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -25,9 +25,9 @@ import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -35,13 +35,12 @@ import java.util.function.Supplier;
 public class ConsoleView {
 	
 	private final JFrame frame;
-	private final JTextPane output;
-	private final @Getter HTMLDocument doc;
+	private final JEditorPane output;
+	private final @Getter Document doc;
 	private final @Getter Element content;
 	private final JScrollPane scroll;
 	private final JCheckBox optionAutoScroll;
 	private final JTextField commandPrompt;
-	private final Font defaultFont = new Font("monospaced", Font.PLAIN, 14);
 	private final List<String> commandStack = new ArrayList<>(List.of(""));
 	private int commandSelected;
 	
@@ -52,12 +51,13 @@ public class ConsoleView {
 		/*
 		 * Render Swing Console
 		 */
+		val defaultFont = new Font("monospaced", Font.PLAIN, 14);
 		
 		val outerColor = Color.getHSBColor(0.5278f, 0.15f, 0.20f);
 		val innerColor = Color.getHSBColor(0.5278f, 0.10f, 0.16f);
 		val middleColor = Color.getHSBColor(0.5278f, 0.15f, 0.25f);
 		
-		output = new JTextPane();
+		output = new JEditorPane();
 		output.setBorder(BorderFactory.createEmptyBorder(5, 20, 5, 5));
 		output.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		output.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -77,42 +77,12 @@ public class ConsoleView {
 			}
 		});
 		output.setCaretColor(new Color(255, 153, 51));
-		output.setContentType("text/html; charset=utf-8");
-		output.setText("""
-				               <html>
-				               <head>
-				               <style>
-				                body {
-				                    color: rgb(245,245,245);
-				                }
-				                pre {
-				                    margin: 0 px;
-				                }
-				                #content {
-				                  display: flex;
-				                  flex-direction: column;
-				                  font-size: 11 px;
-				                  font-family: monospaced;
-				                 }
-				                .info {color: rgb(0, 153, 255);}
-				                .fatal {color: rgb(255,51,0);}
-				                .test {color: rgb(255,204,0);}
-				                .console {color: rgb(51,204,51);}
-				                .trace {color: rgb(105,105,105);}
-				                .warn {color: rgb(255,153,51);}
-				                .error {color: rgb(255,80,80);}
-				               </style>
-				               </head>
-				               <body>
-				                <div id="content">
-				                </div>
-				               </body>
-				               </html>
-				               """);
 		((DefaultCaret) output.getCaret()).setUpdatePolicy(DefaultCaret.NEVER_UPDATE); // no auto-scrolling
 		
-		doc = (HTMLDocument) output.getStyledDocument();
-		content = doc.getElement("content");
+		output.setContentType("text/html; charset=utf-8");
+		doc = createBaseDocument();
+		content = doc.body().getElementById("content");
+		output.setText(doc.outerHtml());
 		
 		commandPrompt = new JTextField();
 		commandPrompt.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -249,11 +219,7 @@ public class ConsoleView {
 			@Override
 			public void append(LogEvent event) {
 				EventQueue.invokeLater(() -> {
-					try {
-						doc.insertBeforeEnd(content, "<div class=\"%s\"><pre>%s</pre></div>".formatted(event.getLevel().name().toLowerCase(), loggingPattern.toSerializable(event)));
-					} catch (BadLocationException | IOException e) {
-						throw new RuntimeException(e);
-					}
+					Optional.ofNullable(content).ifPresent(c -> c.append("<div class=\"%s\"><pre>%s</pre></div>".formatted(event.getLevel().name().toLowerCase(), loggingPattern.toSerializable(event))));
 					revalidate();
 				});
 			}
@@ -276,6 +242,7 @@ public class ConsoleView {
 	}
 	
 	public void revalidate() {
+		output.setText(doc.outerHtml());
 		frame.revalidate();
 		if (optionAutoScroll.isSelected()) scrollToBottom();
 	}
@@ -284,11 +251,7 @@ public class ConsoleView {
 	 * Clear log messages from the view.
 	 */
 	public void clear() {
-		try {
-			doc.remove(0, doc.getLength());
-		} catch (BadLocationException e) {
-			throw new RuntimeException(e);
-		}
+		Optional.ofNullable(content).ifPresent(c -> c.children().remove());
 		revalidate();
 	}
 	
@@ -297,6 +260,39 @@ public class ConsoleView {
 	 */
 	public void dispose() {
 		frame.dispose();
+	}
+	
+	private Document createBaseDocument() {
+		return Jsoup.parse("""
+				                   <html>
+				                   <head>
+				                   <style>
+				                    body {
+				                        color: rgb(245,245,245);
+				                    }
+				                    pre {
+				                        margin: 0 px;
+				                    }
+				                    #content {
+				                      display: flex;
+				                      flex-direction: column;
+				                      font-size: 11 px;
+				                      font-family: monospaced;
+				                     }
+				                    .info {color: rgb(0, 153, 255);}
+				                    .fatal {color: rgb(255,51,0);}
+				                    .test {color: rgb(255,204,0);}
+				                    .console {color: rgb(51,204,51);}
+				                    .trace {color: rgb(105,105,105);}
+				                    .warn {color: rgb(255,153,51);}
+				                    .error {color: rgb(255,80,80);}
+				                   </style>
+				                   </head>
+				                   <body>
+				                    <div id="content"></div>
+				                   </body>
+				                   </html>
+				                   """);
 	}
 	
 }

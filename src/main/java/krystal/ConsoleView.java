@@ -214,7 +214,15 @@ public class ConsoleView {
 		 * Set-up appender
 		 */
 		
-		val appender = new AbstractAppender("ConsoleView", null, loggingPattern, true, null) {
+		val consoleAppenderName = "ConsoleView";
+		
+		Optional.ofNullable(logger.getAppenders().get(consoleAppenderName)).ifPresent(a -> {
+			a.stop();
+			val context = logger.getContext();
+			context.getConfiguration().getRootLogger().removeAppender(consoleAppenderName);
+		});
+		
+		val appender = new AbstractAppender(consoleAppenderName, null, loggingPattern, true, null) {
 			
 			@Override
 			public void append(LogEvent event) {

@@ -758,10 +758,14 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * True if there is any thread active at the moment.
+	 * True if there is any thread active at the moment or any thread watching the queue.
 	 */
 	public boolean isActive() {
 		return activeWorker.get() != null;
+	}
+	
+	public boolean isAlive() {
+		return activeWorker.get() != null || queueWatcher.get() != null;
 	}
 	
 	/**
@@ -785,33 +789,43 @@ public class VirtualPromise<T> {
 	/**
 	 * @see #holdState
 	 */
-	public void setOnHold() {
+	public VirtualPromise<T> setOnHold() {
 		holdState.set(true);
+		return this;
 	}
 	
 	/**
+	 * Switch the {@link #holdState} flag to false. Does not invoke execution of queued threads. Can be used as {@link #mirror(Supplier)} for other VPs.
+	 *
 	 * @see #holdState
-	 * @see #resumeNext()
+	 * @see #start()
 	 */
-	public void resume() {
+	public VirtualPromise<T> resume() {
 		holdState.set(false);
+		return this;
 	}
 	
 	/**
-	 * If the pipeline is on hold, resume the executions by invoking the next thread in line.
+	 * If the pipeline is not {@link #isActive() active}, begin the executions by invoking the next thread in line. The pipeline can still be on {@link #holdState}, then this method won't trigger further execution.
 	 *
 	 * @see #holdState
 	 */
-	public void resumeNext() {
-		Optional.ofNullable(queueWatcher.getAndSet(null)).ifPresent(Thread::interrupt);
-		holdState.set(false);
-		takeNextThread();
+	public VirtualPromise<T> start() {
+		if (!isAlive()) takeNextThread();
+		return this;
+	}
+	
+	/**
+	 * {@link #start()} but switch the {@link #holdState} flag to false first.
+	 */
+	public VirtualPromise<T> resumeNext() {
+		return resume().start();
 	}
 	
 	/**
 	 * Start a watcher thread, that after given timeout, will {@link #cancel()} the promise if not {@link #isComplete()}. The exception while waiting, does not affect the pipeline and can be handled independently.
 	 */
-	public void setTimeout(Duration duration, @Nullable Consumer<InterruptedException> handler) {
+	public VirtualPromise<T> setTimeout(Duration duration, @Nullable Consumer<InterruptedException> handler) {
 		timeout.set(Thread.startVirtualThread(() -> {
 			try {
 				Thread.sleep(duration);
@@ -821,6 +835,7 @@ public class VirtualPromise<T> {
 					handler.accept(e);
 			}
 		}));
+		return this;
 	}
 	
 	/**

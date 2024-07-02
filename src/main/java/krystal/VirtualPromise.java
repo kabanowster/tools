@@ -275,6 +275,26 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
+	public <R> VirtualPromise<R> compose(Supplier<@NonNull VirtualPromise<R>> joiner) {
+		return compose(joiner, null);
+	}
+	
+	public <R> VirtualPromise<R> compose(Supplier<@NonNull VirtualPromise<R>> joiner, @Nullable String threadName) {
+		stepsCount.getAndIncrement();
+		val newState = new AtomicReference<R>();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
+			try {
+				val otherState = joiner.get().catchRun(this::setException).join();
+				if (exception.get() == null) newState.set(otherState.orElse(null));
+			} catch (Exception e) {
+				setException(e);
+			}
+			arriveAndStartNextThread();
+		});
+		threads.offer(thread);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	}
+	
 	public <R, O> VirtualPromise<R> compose(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner) {
 		return compose(otherPromise, combiner, null);
 	}

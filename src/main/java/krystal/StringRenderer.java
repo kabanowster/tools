@@ -223,6 +223,15 @@ public class StringRenderer {
 			return this;
 		}
 		
+		public void reset() {
+			progress = 0;
+		}
+		
+		public void reset(long newTarget) {
+			reset();
+			target = newTarget;
+		}
+		
 		public static ProgressRenderer simpleProgressBar() {
 			return new ProgressRenderer() {
 				@Override

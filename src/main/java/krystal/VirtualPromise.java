@@ -37,6 +37,7 @@ public class VirtualPromise<T> {
 	private final AtomicReference<Thread> activeWorker;
 	private final AtomicReference<Thread> queueWatcher;
 	private final AtomicReference<Throwable> exception;
+	private final AtomicReference<ExceptionsHandler> exceptionsHandler;
 	/**
 	 * You can put the further execution of the pipeline into hold. The {@link #activeWorker} thread will finish its tasks but won't trigger the next step in line.
 	 *
@@ -63,6 +64,7 @@ public class VirtualPromise<T> {
 		activeWorker = new AtomicReference<>();
 		queueWatcher = new AtomicReference<>();
 		exception = new AtomicReference<>();
+		exceptionsHandler = new AtomicReference<>();
 		holdState = new AtomicBoolean(false);
 		pipelineName = new AtomicReference<>("Unnamed VirtualPromise");
 		timeout = null;
@@ -176,7 +178,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <R> VirtualPromise<R> thenSupply(Supplier<R> supplier) {
@@ -195,7 +197,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <R> VirtualPromise<R> map(Function<T, R> function) {
@@ -214,7 +216,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public VirtualPromise<T> apply(UnaryOperator<T> updater) {
@@ -250,7 +252,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <R> VirtualPromise<R> compose(Function<T, @NonNull VirtualPromise<R>> function) {
@@ -270,7 +272,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <R, O> VirtualPromise<R> compose(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner) {
@@ -293,7 +295,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <O, R> VirtualPromise<R> composeFlat(VirtualPromise<O> otherPromise, BiFunction<O, T, VirtualPromise<R>> returnedPromise) {
@@ -315,7 +317,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	/**
@@ -346,7 +348,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	/**
@@ -377,7 +379,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper) {
@@ -430,7 +432,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	public <R> VirtualPromise<Void> acceptFork(Function<T, Stream<R>> streamSupplier, Consumer<R> elementConsumer) {
@@ -472,7 +474,7 @@ public class VirtualPromise<T> {
 			arriveAndStartNextThread();
 		});
 		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	/*
@@ -489,6 +491,10 @@ public class VirtualPromise<T> {
 	/**
 	 * Resolve any exception, registered up to the current step in the pipeline. Occurrence of the exception prevents the executions down the pipeline, until it is resolved. This step in the pipeline can throw exception, thus overwriting the one being the
 	 * subject.
+	 *
+	 * @see #catchSupply(Function, String)
+	 * @see #catchThrow(String)
+	 * @see #catchExceptions(ExceptionsHandler)
 	 */
 	public VirtualPromise<T> catchRun(Consumer<Throwable> consumer, @Nullable String threadName) {
 		stepsCount.getAndIncrement();
@@ -559,6 +565,37 @@ public class VirtualPromise<T> {
 		threads.offer(thread);
 		return this;
 	}
+	
+	/**
+	 * Set a default exceptions handler as a step in pipeline, to be applied to the next steps.
+	 * This will resolve exceptions at their occurrence rather than at the catching step like {@link #catchRun(Consumer, String)}.
+	 *
+	 * @param exceptionsHandler
+	 * 		Set to {@code null} to trigger off.
+	 * @see ExceptionsHandler
+	 * @see #setExceptionsHandler(ExceptionsHandler)
+	 */
+	public VirtualPromise<T> catchExceptions(@Nullable ExceptionsHandler exceptionsHandler) {
+		return monitor(_ -> this.exceptionsHandler.set(exceptionsHandler));
+	}
+	
+	/**
+	 * Create a default catchExceptions for the whole pipeline.
+	 *
+	 * @param overridePipelineHandlers
+	 * 		If set to {@code true}, exceptions won't be stored within pipeline which won't trigger any further catching steps like {@link #catchRun(Consumer, String)}.
+	 */
+	public record ExceptionsHandler(boolean overridePipelineHandlers, Consumer<Throwable> exceptionsHandler) {
+		
+		public ExceptionsHandler(Consumer<Throwable> exceptionsHandler) {
+			this(true, exceptionsHandler);
+		}
+		
+	}
+	
+	/*
+	 * Monitoring
+	 */
 	
 	/**
 	 * Take {@link Consumer} action on current {@link VirtualPromise}.
@@ -668,7 +705,24 @@ public class VirtualPromise<T> {
 	}
 	
 	public void setException(Throwable exc) {
-		exception.set(exc);
+		if (!Optional.ofNullable(exceptionsHandler.get())
+		             .map(h -> {
+			             h.exceptionsHandler.accept(exc);
+			             return h.overridePipelineHandlers;
+		             })
+		             .orElse(false)
+		) exception.set(exc);
+	}
+	
+	/**
+	 * Set to {@link null} to disable.
+	 *
+	 * @see ExceptionsHandler
+	 * @see #catchExceptions(ExceptionsHandler)
+	 */
+	public VirtualPromise<T> setExceptionsHandler(@Nullable ExceptionsHandler exceptionsHandler) {
+		this.exceptionsHandler.set(exceptionsHandler);
+		return this;
 	}
 	
 	private String constructName(String threadName, String defaultName) {
@@ -872,7 +926,7 @@ public class VirtualPromise<T> {
 	}
 	
 	public VirtualPromise<Void> toVoid() {
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
 	}
 	
 	/*

@@ -20,7 +20,9 @@ import java.util.function.*;
 import java.util.stream.Stream;
 
 /**
- * Each pipeline execution is a single VirtualThread. The execution starts at first pipeline step declared.
+ * Each pipeline execution is a single VirtualThread. The execution starts at first pipeline step declared, unless it is created with {@link #as(String)} method.
+ *
+ * @apiNote Inactive VP can be started with {@link #start()}.
  */
 @Log4j2
 @AllArgsConstructor
@@ -40,6 +42,10 @@ public class VirtualPromise<T> {
 	 *
 	 * @see #setOnHold()
 	 * @see #holdAndGet(Consumer)
+	 * @see #start()
+	 * @see #resume()
+	 * @see #resumeNext()
+	 * @see #cancel()
 	 */
 	private final AtomicBoolean holdState;
 	/**
@@ -642,8 +648,18 @@ public class VirtualPromise<T> {
 	 *
 	 * @see #as(String)
 	 */
-	public VirtualPromise<T> changeName(String pipelineName) {
+	public VirtualPromise<T> name(String pipelineName) {
 		this.pipelineName.set(pipelineName);
+		return this;
+	}
+	
+	/**
+	 * Uses current {@link #objectState} as the source for the name.
+	 *
+	 * @see #name(String)
+	 */
+	public VirtualPromise<T> name(Function<T, String> withCurrentObject) {
+		this.pipelineName.set(withCurrentObject.apply(objectState.get()));
 		return this;
 	}
 	
@@ -672,6 +688,7 @@ public class VirtualPromise<T> {
 		// phaser.arriveAndAwaitAdvance(); AWAIT ADVANCE IS PINNING VIRTUAL THREADS :(
 		if (!holdState.get()) {
 			while (!isComplete() || isActive()) {
+				if (isIdle() || hasException()) break;
 				try {
 					Thread.sleep(threadSleepDuration);
 				} catch (InterruptedException e) {
@@ -718,12 +735,13 @@ public class VirtualPromise<T> {
 	 * Interrupt and cancel the current execution and set the pipeline on hold state.
 	 *
 	 * @see #holdState
+	 * @see #cancelAndDrop()
+	 * @see #cancelAndGet()
 	 */
 	public void cancel() {
 		holdState.set(true);
 		Optional.ofNullable(activeWorker.getAndSet(null)).ifPresent(t -> {
 			t.interrupt();
-			stepsCount.getAndDecrement();
 			activeWorker.set(null);
 		});
 		Optional.ofNullable(queueWatcher.getAndSet(null)).ifPresent(t -> {
@@ -758,12 +776,15 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * True if there is any thread active at the moment or any thread watching the queue.
+	 * True if there is any thread working at the moment.
 	 */
 	public boolean isActive() {
 		return activeWorker.get() != null;
 	}
 	
+	/**
+	 * True if there is any thread working at the moment or any thread watching the queue.
+	 */
 	public boolean isAlive() {
 		return activeWorker.get() != null || queueWatcher.get() != null;
 	}
@@ -773,10 +794,6 @@ public class VirtualPromise<T> {
 	 */
 	public boolean isIdle() {
 		return isOnHold() && threads.isEmpty();
-	}
-	
-	public boolean hasException() {
-		return exception.get() != null;
 	}
 	
 	/**
@@ -794,6 +811,14 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
+	public boolean isDropped() {
+		return isIdle() && stepsCount.get() > 0;
+	}
+	
+	public boolean hasException() {
+		return exception.get() != null;
+	}
+	
 	/**
 	 * Switch the {@link #holdState} flag to false. Does not invoke execution of queued threads. Can be used as {@link #mirror(Supplier)} for other VPs.
 	 *
@@ -806,9 +831,10 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * If the pipeline is not {@link #isActive() active}, begin the executions by invoking the next thread in line. The pipeline can still be on {@link #holdState}, then this method won't trigger further execution.
+	 * If the pipeline is not {@link #isAlive() alive}, begin the executions by invoking the next thread in line. The pipeline can still be on {@link #holdState}, then this method won't trigger further execution.
 	 *
 	 * @see #holdState
+	 * @see #resumeNext()
 	 */
 	public VirtualPromise<T> start() {
 		if (!isAlive()) takeNextThread();

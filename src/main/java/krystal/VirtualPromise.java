@@ -237,6 +237,27 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
+	public VirtualPromise<T> apply(Consumer<T> consumer) {
+		return apply(consumer, null);
+	}
+	
+	public VirtualPromise<T> apply(Consumer<T> consumer, @Nullable String threadName) {
+		stepsCount.getAndIncrement();
+		val thread = Thread.ofVirtual().name(constructName(threadName, "apply")).unstarted(() -> {
+			try {
+				if (exception.get() == null) objectState.getAndUpdate(o -> {
+					consumer.accept(o);
+					return o;
+				});
+			} catch (Exception e) {
+				setException(e);
+			}
+			arriveAndStartNextThread();
+		});
+		threads.offer(thread);
+		return this;
+	}
+	
 	public VirtualPromise<Void> accept(Consumer<T> consumer) {
 		return accept(consumer, null);
 	}

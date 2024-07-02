@@ -12,6 +12,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
+import javax.annotation.Nullable;
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicArrowButton;
 import javax.swing.plaf.basic.BasicScrollBarUI;
@@ -47,7 +48,7 @@ public class ConsoleView {
 	/**
 	 * Creates a simple Swing window to output log events.
 	 */
-	public ConsoleView(Logger logger, PatternLayout loggingPattern, Consumer<String> commandParser) {
+	public ConsoleView(@Nullable String windowTitle, Logger logger, PatternLayout loggingPattern, Consumer<String> commandParser) {
 		/*
 		 * Render Swing Console
 		 */
@@ -192,7 +193,7 @@ public class ConsoleView {
 		frame = new JFrame();
 		frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
 		frame.setSize(1350, 700);
-		frame.setTitle("Krystal Frame: Console View");
+		frame.setTitle(Optional.ofNullable(windowTitle).orElse("Krystal Frame: Console View"));
 		frame.setLocationRelativeTo(null);
 		frame.setLayout(new BoxLayout(frame.getContentPane(), BoxLayout.Y_AXIS));
 		

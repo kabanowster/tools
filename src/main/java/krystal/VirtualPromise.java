@@ -8,6 +8,7 @@ import lombok.val;
 
 import javax.annotation.Nullable;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -642,7 +643,7 @@ public class VirtualPromise<T> {
 	 * Take {@link Consumer} action on current {@link VirtualPromise}.
 	 * I.e. this step can be used to create dependencies on other {@link VirtualPromise}, at the time of evaluation.
 	 *
-	 * @see #mirror(Supplier)
+	 * @see #mirror(Supplier[])
 	 */
 	public VirtualPromise<T> monitor(Consumer<VirtualPromise<T>> actionOnSelf, @Nullable String threadName) {
 		stepsCount.getAndIncrement();
@@ -670,8 +671,9 @@ public class VirtualPromise<T> {
 	 * If the other promises have exceptions or are {@link #isIdle() idle} - {@link #cancelAndDrop()}.
 	 * If they are on {@link #holdState hold} - {@link Thread#sleep(long) wait} until they resume.
 	 */
-	public VirtualPromise<T> mirror(Supplier<Stream<VirtualPromise<?>>> others) {
-		return monitor(_ -> others.get().forEach(promise -> {
+	@SafeVarargs
+	public final VirtualPromise<T> mirror(Supplier<VirtualPromise<?>>... others) {
+		return monitor(_ -> Arrays.stream(others).map(Supplier::get).forEach(promise -> {
 			if (this.isIdle() || hasException()) return;
 			
 			if (promise.hasException() || promise.isIdle()) {
@@ -756,7 +758,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Set to {@link null} to disable.
+	 * Set to {@code null} to disable.
 	 *
 	 * @see ExceptionsHandler
 	 * @see #catchExceptions(ExceptionsHandler)
@@ -801,6 +803,10 @@ public class VirtualPromise<T> {
 	 */
 	public Optional<T> joinThrow() {
 		return this.catchThrow().join();
+	}
+	
+	public T peek() {
+		return objectState.get();
 	}
 	
 	public @Nullable Throwable getException() {
@@ -915,7 +921,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Switch the {@link #holdState} flag to false. Does not invoke execution of queued threads. Can be used as {@link #mirror(Supplier)} for other VPs.
+	 * Switch the {@link #holdState} flag to false. Does not invoke execution of queued threads. Can be used as {@link #mirror(Supplier[])} for other VPs.
 	 *
 	 * @see #holdState
 	 * @see #start()

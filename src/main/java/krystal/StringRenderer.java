@@ -29,18 +29,21 @@ public class StringRenderer {
 	public String renderTable(List<String> columns, List<List<String>> rows) {
 		
 		val render = new StringBuilder();
-		val offset = System.lineSeparator() + " ".repeat(4);
+		val spacing = " ".repeat(4);
+		val newLine = System.lineSeparator() + spacing;
 		val minWidths = calculateMinWidths(columns, rows);
 		int totalWidth = minWidths.stream().mapToInt(Integer::intValue).sum() + 3 * (columns.size() - 1) + 6;
 		val horizontalLine = "-".repeat(totalWidth);
 		
-		render.append(offset).append(horizontalLine);
-		render.append(offset).append(renderRow(columns, minWidths));
-		render.append(offset).append(horizontalLine);
+		// head
+		render.append(newLine).append(horizontalLine).append(spacing);
+		render.append(newLine).append(renderRow(columns, minWidths)).append(spacing);
+		render.append(newLine).append(horizontalLine).append(spacing);
 		
+		// body
 		Stream.of(rows).flatMap(Collection::stream)
-		      .forEach(r -> render.append(offset).append(renderRow(r, minWidths)));
-		render.append(offset).append(horizontalLine).append(System.lineSeparator());
+		      .forEach(r -> render.append(newLine).append(renderRow(r, minWidths)).append(spacing));
+		render.append(newLine).append(horizontalLine).append(spacing).append(System.lineSeparator());
 		
 		return render.toString();
 	}

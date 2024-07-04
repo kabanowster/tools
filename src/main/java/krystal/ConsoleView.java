@@ -8,9 +8,9 @@ import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.layout.PatternLayout;
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
 
 import javax.annotation.Nullable;
 import javax.swing.*;
@@ -37,8 +37,7 @@ public class ConsoleView {
 	
 	private final JFrame frame;
 	private final JEditorPane output;
-	private final @Getter Document doc;
-	private final @Getter Element content;
+	private final @Getter Document contentDocument;
 	private final JScrollPane scroll;
 	private final JCheckBox optionAutoScroll;
 	private final JTextField commandPrompt;
@@ -81,9 +80,10 @@ public class ConsoleView {
 		((DefaultCaret) output.getCaret()).setUpdatePolicy(DefaultCaret.NEVER_UPDATE); // no auto-scrolling
 		
 		output.setContentType("text/html; charset=utf-8");
-		doc = createBaseDocument();
-		content = doc.body().getElementById("content");
-		output.setText(doc.outerHtml());
+		contentDocument = createBaseDocument();
+		setStyle(getDefaultStyle());
+		
+		output.setText(contentDocument.outerHtml());
 		
 		commandPrompt = new JTextField();
 		commandPrompt.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -228,7 +228,10 @@ public class ConsoleView {
 			@Override
 			public void append(LogEvent event) {
 				EventQueue.invokeLater(() -> {
-					Optional.ofNullable(content).ifPresent(c -> c.append("<div class=\"%s\"><pre>%s</pre></div>".formatted(event.getLevel().name().toLowerCase(), loggingPattern.toSerializable(event))));
+					new Element("div").appendTo(getContent())
+					                  .addClass(event.getLevel().name().toLowerCase())
+					                  .appendElement("pre")
+					                  .append(loggingPattern.toSerializable(event));
 					revalidate();
 				});
 			}
@@ -250,8 +253,11 @@ public class ConsoleView {
 		commandPrompt.requestFocus();
 	}
 	
+	/**
+	 * Refresh the content and swing window and scroll to bottom if set.
+	 */
 	public void revalidate() {
-		output.setText(doc.outerHtml());
+		output.setText(contentDocument.outerHtml());
 		frame.revalidate();
 		if (optionAutoScroll.isSelected()) scrollToBottom();
 	}
@@ -260,7 +266,7 @@ public class ConsoleView {
 	 * Clear log messages from the view.
 	 */
 	public void clear() {
-		Optional.ofNullable(content).ifPresent(c -> c.children().remove());
+		getContent().children().remove();
 		revalidate();
 	}
 	
@@ -271,37 +277,81 @@ public class ConsoleView {
 		frame.dispose();
 	}
 	
+	/*
+	 * Styling
+	 */
+	
+	/**
+	 * Set {@code <style>} within the {@code <head>} tag.
+	 */
+	public void setStyle(String styles) {
+		Optional.ofNullable(contentDocument.head().getElementsByTag("style").first())
+		        .orElseGet(() -> new Element("style").attr("type", "text/css").appendTo(contentDocument.head()))
+		        .text(styles);
+	}
+	
+	/**
+	 * Add style sheet file reference to the {@code <head>} tag of the view document.
+	 */
+	public void addStyleSheet(String styleSheetLink) {
+		if (getStyleSheet(styleSheetLink).isEmpty()) {
+			contentDocument.head()
+			               .appendElement("link")
+			               .attr("rel", "stylesheet")
+			               .attr("type", "text/css")
+			               .attr("href", styleSheetLink)
+			;
+		}
+	}
+	
+	public void removeStyleSheet(String styleSheetLink) {
+		getStyleSheet(styleSheetLink).ifPresent(Node::remove);
+	}
+	
+	private Optional<Element> getStyleSheet(String styleSheetLink) {
+		return Optional.ofNullable(
+				contentDocument.head()
+				               .getElementsByTag("link")
+				               .select("[rel=\"stylesheet\"]")
+				               .select("[href=\"" + styleSheetLink + "\"]")
+				               .first()
+		);
+	}
+	
+	private String getDefaultStyle() {
+		return """
+						                    body {
+						                        color: rgb(245,245,245);
+						                    }
+						                    pre {
+						                        margin: 0 px;
+						                    }
+					                        main {
+				                                display: flex;
+						                        flex-direction: column;
+						                        font-size: 11 px;
+						                        font-family: monospaced;
+						                    }
+						                    .info {color: rgb(0, 153, 255);}
+						                    .fatal {color: rgb(255,51,0);}
+						                    .test {color: rgb(255,204,0);}
+						                    .console {color: rgb(51,204,51);}
+						                    .trace {color: rgb(105,105,105);}
+						                    .warn {color: rgb(255,153,51);}
+						                    .error {color: rgb(255,80,80);}
+				""";
+	}
+	
+	public Element getContent() {
+		return Optional.ofNullable(contentDocument.body().getElementsByTag("main").getFirst())
+		               .orElseGet(() -> new Element("main").appendTo(contentDocument.body()));
+	}
+	
 	private Document createBaseDocument() {
-		return Jsoup.parse("""
-				                   <html>
-				                   <head>
-				                   <style>
-				                    body {
-				                        color: rgb(245,245,245);
-				                    }
-				                    pre {
-				                        margin: 0 px;
-				                    }
-				                    #content {
-				                      display: flex;
-				                      flex-direction: column;
-				                      font-size: 11 px;
-				                      font-family: monospaced;
-				                     }
-				                    .info {color: rgb(0, 153, 255);}
-				                    .fatal {color: rgb(255,51,0);}
-				                    .test {color: rgb(255,204,0);}
-				                    .console {color: rgb(51,204,51);}
-				                    .trace {color: rgb(105,105,105);}
-				                    .warn {color: rgb(255,153,51);}
-				                    .error {color: rgb(255,80,80);}
-				                   </style>
-				                   </head>
-				                   <body>
-				                    <div id="content"></div>
-				                   </body>
-				                   </html>
-				                   """);
+		return Document.createShell("")
+		               .body()
+		               .appendElement("main")
+		               .ownerDocument();
 	}
 	
 }

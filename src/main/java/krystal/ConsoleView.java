@@ -32,6 +32,9 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+/**
+ * Custom, Swing, logging output render and commands parser. Uses {@link JEditorPane} for HTML parsed output.
+ */
 @Log4j2
 public class ConsoleView {
 	
@@ -322,26 +325,26 @@ public class ConsoleView {
 	
 	private String getDefaultStyle() {
 		return """
-						                    body {
-						                        color: rgb(245,245,245);
-						                    }
-						                    pre {
-						                        margin: 0px;
-						                    }
-					                        #main {
-				                                display: flex;
-						                        flex-direction: column;
-						                        font-size: 11px;
-						                        font-family: monospaced;
-						                    }
-						                    .info {color: rgb(0, 153, 255);}
-						                    .fatal {color: rgb(255,51,0);}
-						                    .test {color: rgb(255,204,0);}
-						                    .console {color: rgb(51,204,51);}
-						                    .trace {color: rgb(105,105,105);}
-						                    .warn {color: rgb(255,153,51);}
-						                    .error {color: rgb(255,80,80);}
-				""";
+		       		                    body {
+		       		                        color: rgb(245,245,245);
+		       		                    }
+		       		                    pre {
+		       		                        margin: 0px;
+		       		                    }
+		       	                        #main {
+		                                       display: flex;
+		       		                        flex-direction: column;
+		       		                        font-size: 11px;
+		       		                        font-family: monospaced;
+		       		                    }
+		       		                    .info {color: rgb(0, 153, 255);}
+		       		                    .fatal {color: rgb(255,51,0);}
+		       		                    .test {color: rgb(255,204,0);}
+		       		                    .console {color: rgb(51,204,51);}
+		       		                    .trace {color: rgb(105,105,105);}
+		       		                    .warn {color: rgb(255,153,51);}
+		       		                    .error {color: rgb(255,80,80);}
+		       """;
 	}
 	
 	public Element getContent() {

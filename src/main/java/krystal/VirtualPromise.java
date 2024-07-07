@@ -13,7 +13,9 @@ import java.util.Comparator;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,7 +31,6 @@ import java.util.stream.Stream;
 @AllArgsConstructor
 public class VirtualPromise<T> {
 	
-	private static final ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
 	private static @Setter int threadSleepDuration = 10;
 	
 	private final LinkedBlockingQueue<Thread> threads;
@@ -53,10 +54,14 @@ public class VirtualPromise<T> {
 	/**
 	 * The pipeline name used for debugging.
 	 *
-	 * @see #getActiveVirtualName()
+	 * @see #getActiveWorkerName()
 	 */
 	private final AtomicReference<String> pipelineName;
 	private final AtomicReference<Thread> timeout;
+	
+	/*
+	 * Constructors
+	 */
 	
 	private VirtualPromise() {
 		threads = new LinkedBlockingQueue<>();
@@ -76,53 +81,29 @@ public class VirtualPromise<T> {
 		this.pipelineName.set(pipelineName);
 	}
 	
-	private VirtualPromise(Runnable runnable, String threadName) {
+	private VirtualPromise(Runnable runnable, @Nullable String threadName) {
 		this();
-		stepsCount.getAndIncrement();
-		Thread.startVirtualThread(() -> {
-			activeWorker.set(Thread.currentThread());
-			try {
-				runnable.run();
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		}).setName(constructName(threadName, "run"));
+		stateThread(Optional.ofNullable(threadName).orElse("run"), runnable).start();
 	}
 	
-	private VirtualPromise(Supplier<T> supplier, String threadName) {
+	private VirtualPromise(Supplier<T> supplier, @Nullable String threadName) {
 		this();
-		stepsCount.getAndIncrement();
-		Thread.startVirtualThread(() -> {
-			activeWorker.set(Thread.currentThread());
-			try {
-				objectState.set(supplier.get());
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		}).setName(constructName(threadName, "supply"));
+		stateThread(Optional.ofNullable(threadName).orElse("supply"), () -> objectState.set(supplier.get())).start();
 	}
 	
-	private VirtualPromise(String threadName, VirtualPromise<?>... promises) {
+	private VirtualPromise(@Nullable String threadName, VirtualPromise<?>... promises) {
 		this();
-		stepsCount.getAndIncrement();
-		Thread.startVirtualThread(() -> {
-			activeWorker.set(Thread.currentThread());
-			try {
-				Stream.of(promises)
-				      .map(p -> {
-					      p.join();
-					      return p.getException();
-				      })
-				      .filter(Objects::nonNull)
-				      .findAny()
-				      .ifPresent(exception::set);
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		}).setName(constructName(threadName, "fork"));
+		stateThread(
+				Optional.ofNullable(threadName).orElse("fork"),
+				() -> Stream.of(promises)
+				            .map(p -> {
+					            p.join();
+					            return p.getException();
+				            })
+				            .filter(Objects::nonNull)
+				            .findAny()
+				            .ifPresent(exception::set)
+		).start();
 	}
 	
 	/*
@@ -136,230 +117,220 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(pipelineName);
 	}
 	
-	public static VirtualPromise<Void> run(Runnable runnable) {
-		return run(runnable, null);
-	}
-	
 	public static VirtualPromise<Void> run(Runnable runnable, @Nullable String threadName) {
 		return new VirtualPromise<>(runnable, threadName);
 	}
 	
-	public static <T> VirtualPromise<T> supply(Supplier<T> supplier) {
-		return supply(supplier, null);
+	public static VirtualPromise<Void> run(Runnable runnable) {
+		return run(runnable, null);
 	}
 	
 	public static <T> VirtualPromise<T> supply(Supplier<T> supplier, @Nullable String threadName) {
 		return new VirtualPromise<>(supplier, threadName);
 	}
 	
-	public static VirtualPromise<Void> fork(VirtualPromise<?>... promises) {
-		return fork(null, promises);
+	public static <T> VirtualPromise<T> supply(Supplier<T> supplier) {
+		return supply(supplier, null);
 	}
 	
 	public static VirtualPromise<Void> fork(@Nullable String threadName, VirtualPromise<?>... promises) {
 		return new VirtualPromise<>(threadName, promises);
 	}
 	
-	/*
-	 * Intermediate methods
-	 */
-	
-	public VirtualPromise<Void> thenRun(Runnable runnable) {
-		return thenRun(runnable, null);
+	public static VirtualPromise<Void> fork(VirtualPromise<?>... promises) {
+		return fork(null, promises);
 	}
 	
-	public VirtualPromise<Void> thenRun(Runnable runnable, @Nullable String threadName) {
+	/*
+	 * Primitive actions
+	 */
+	
+	private void takeNextThread() {
+		val thread = Thread.ofVirtual().name("%s queue watcher".formatted(pipelineName.get())).unstarted(() -> {
+			activeWorker.set(null);
+			if (!holdState.get()) {
+				try {
+					while (threads.isEmpty()) {
+						// take() method pins the thread
+						Thread.sleep(threadSleepDuration);
+					}
+					val next = threads.poll();
+					activeWorker.set(next);
+					next.start();
+				} catch (InterruptedException e) {
+					holdState.set(true);
+				}
+			}
+			queueWatcher.set(null);
+		});
+		queueWatcher.set(thread);
+		thread.start();
+	}
+	
+	private void arriveAndStartNextThread() {
+		stepsCount.getAndDecrement();
+		takeNextThread();
+	}
+	
+	private String constructThreadName(String threadName) {
+		return "%s: [%s]".formatted(pipelineName.get(), threadName);
+	}
+	
+	private Thread stateThread(String threadName, Runnable runnable, boolean onError) {
 		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenRun")).unstarted(() -> {
+		return Thread.ofVirtual().name(constructThreadName(threadName)).unstarted(() -> {
+			activeWorker.set(Thread.currentThread());
 			try {
-				if (exception.get() == null) runnable.run();
+				if (onError == (exception.get() != null)) runnable.run();
 			} catch (Exception e) {
 				setException(e);
 			}
 			arriveAndStartNextThread();
 		});
-		threads.offer(thread);
+	}
+	
+	private Thread stateThread(String threadName, Runnable runnable) {
+		return stateThread(threadName, runnable, false);
+	}
+	
+	private VirtualPromise<T> stateError(String threadName, Runnable catchAction) {
+		threads.offer(
+				stateThread(
+						threadName,
+						() -> {
+							catchAction.run();
+							exception.set(null);
+						}, true
+				));
+		return this;
+	}
+	
+	private VirtualPromise<Void> stateVoid(String threadName, Runnable stateAction) {
+		threads.offer(stateThread(threadName, stateAction));
+		return toVoid();
+	}
+	
+	private VirtualPromise<T> stateKeep(String threadName, Runnable stateAction) {
+		threads.offer(stateThread(threadName, stateAction));
+		return this;
+	}
+	
+	private <R> VirtualPromise<R> stateChange(String threadName, Supplier<R> stateAction) {
+		val newState = new AtomicReference<R>();
+		threads.offer(stateThread(threadName, () -> newState.set(stateAction.get())));
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	}
+	
+	public VirtualPromise<Void> toVoid() {
 		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	}
+	
+	/*
+	 * Pipeline steps
+	 */
+	
+	public VirtualPromise<Void> thenRun(Runnable runnable, @Nullable String threadName) {
+		return stateVoid(Optional.ofNullable(threadName).orElse("thenRun"), runnable);
+	}
+	
+	public VirtualPromise<Void> thenRun(Runnable runnable) {
+		return thenRun(runnable, null);
+	}
+	
+	public <R> VirtualPromise<R> thenSupply(Supplier<R> supplier, @Nullable String threadName) {
+		return stateChange(Optional.ofNullable(threadName).orElse("thenSupply"), supplier);
 	}
 	
 	public <R> VirtualPromise<R> thenSupply(Supplier<R> supplier) {
 		return thenSupply(supplier, null);
 	}
 	
-	public <R> VirtualPromise<R> thenSupply(Supplier<R> supplier, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "thenSupply")).unstarted(() -> {
-			try {
-				if (exception.get() == null) newState.set(supplier.get());
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	public <R> VirtualPromise<R> map(Function<T, R> function, @Nullable String threadName) {
+		return stateChange(Optional.ofNullable(threadName).orElse("map"), () -> function.apply(objectState.get()));
 	}
 	
 	public <R> VirtualPromise<R> map(Function<T, R> function) {
 		return map(function, null);
 	}
 	
-	public <R> VirtualPromise<R> map(Function<T, R> function, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "map")).unstarted(() -> {
-			try {
-				if (exception.get() == null) newState.set(function.apply(objectState.get()));
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	public VirtualPromise<T> apply(UnaryOperator<T> updater, @Nullable String threadName) {
+		return stateKeep(Optional.ofNullable(threadName).orElse("apply"), () -> objectState.getAndUpdate(updater));
 	}
 	
 	public VirtualPromise<T> apply(UnaryOperator<T> updater) {
 		return apply(updater, null);
 	}
 	
-	public VirtualPromise<T> apply(UnaryOperator<T> updater, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "apply")).unstarted(() -> {
-			try {
-				if (exception.get() == null) objectState.getAndUpdate(updater);
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return this;
-	}
-	
-	public VirtualPromise<T> apply(Consumer<T> consumer) {
-		return apply(consumer, null);
-	}
-	
-	public VirtualPromise<T> apply(Consumer<T> consumer, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "apply")).unstarted(() -> {
-			try {
-				if (exception.get() == null) objectState.getAndUpdate(o -> {
-					consumer.accept(o);
-					return o;
-				});
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return this;
+	public VirtualPromise<Void> accept(Consumer<T> consumer, @Nullable String threadName) {
+		return stateVoid(Optional.ofNullable(threadName).orElse("accept"), () -> consumer.accept(objectState.get()));
 	}
 	
 	public VirtualPromise<Void> accept(Consumer<T> consumer) {
 		return accept(consumer, null);
 	}
 	
-	public VirtualPromise<Void> accept(Consumer<T> consumer, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "accept")).unstarted(() -> {
-			try {
-				if (exception.get() == null) consumer.accept(objectState.get());
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	public <R> VirtualPromise<R> compose(Function<T, @NonNull VirtualPromise<R>> function, @Nullable String threadName) {
+		return stateChange(Optional.ofNullable(threadName).orElse("compose"), () -> function.apply(objectState.get())
+		                                                                                    .catchRun(this::setException)
+		                                                                                    .join()
+		                                                                                    .orElse(null));
 	}
 	
 	public <R> VirtualPromise<R> compose(Function<T, @NonNull VirtualPromise<R>> function) {
 		return compose(function, null);
 	}
 	
-	public <R> VirtualPromise<R> compose(Function<T, @NonNull VirtualPromise<R>> function, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
-			try {
-				val otherState = function.apply(objectState.get()).catchRun(this::setException).join();
-				if (exception.get() == null) newState.set(otherState.orElse(null));
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	public <R> VirtualPromise<R> compose(Supplier<@NonNull VirtualPromise<R>> joiner, @Nullable String threadName) {
+		return stateChange(Optional.ofNullable(threadName).orElse("compose"), () -> joiner.get().catchRun(this::setException).join().orElse(null));
 	}
 	
 	public <R> VirtualPromise<R> compose(Supplier<@NonNull VirtualPromise<R>> joiner) {
 		return compose(joiner, null);
 	}
 	
-	public <R> VirtualPromise<R> compose(Supplier<@NonNull VirtualPromise<R>> joiner, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
-			try {
-				val otherState = joiner.get().catchRun(this::setException).join();
-				if (exception.get() == null) newState.set(otherState.orElse(null));
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	/**
+	 * The other promise exception affects the current pipeline. Effectively joins provided promise.
+	 */
+	public <R, O> VirtualPromise<R> compose(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner, @Nullable String threadName) {
+		return stateChange(
+				Optional.ofNullable(threadName).orElse("compose"),
+				() -> combiner.apply(otherPromise.catchRun(this::setException).join().orElse(null), objectState.get())
+		);
 	}
 	
 	public <R, O> VirtualPromise<R> compose(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner) {
 		return compose(otherPromise, combiner, null);
 	}
 	
-	/**
-	 * The other promise exception affects the current pipeline. Effectively joins provided promise.
-	 */
-	public <R, O> VirtualPromise<R> compose(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
-			try {
-				val otherState = otherPromise.catchRun(this::setException).join();
-				if (exception.get() == null) newState.set(combiner.apply(otherState.orElse(null), objectState.get()));
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	public <O, R> VirtualPromise<R> composeFlat(VirtualPromise<O> otherPromise, BiFunction<O, T, VirtualPromise<R>> returnedPromise, @Nullable String threadName) {
+		return stateChange(
+				Optional.ofNullable(threadName).orElse("compose"),
+				() -> returnedPromise.apply(otherPromise.catchRun(this::setException).join().orElse(null), objectState.get())
+				                     .catchRun(this::setException)
+				                     .join()
+				                     .orElse(null)
+		);
 	}
 	
 	public <O, R> VirtualPromise<R> composeFlat(VirtualPromise<O> otherPromise, BiFunction<O, T, VirtualPromise<R>> returnedPromise) {
 		return composeFlat(otherPromise, returnedPromise, null);
 	}
 	
-	public <O, R> VirtualPromise<R> composeFlat(VirtualPromise<O> otherPromise, BiFunction<O, T, VirtualPromise<R>> returnedPromise, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<R>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "compose")).unstarted(() -> {
-			try {
-				val otherState = otherPromise.catchRun(this::setException).join();
-				if (exception.get() == null) {
-					newState.set(returnedPromise.apply(otherState.orElse(null), objectState.get()).catchRun(this::setException).join().orElse(null));
-				}
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	/**
+	 * The provided promises will execute parallel to ongoing pipeline, and begin as soon as it states this step. To fork promises <b><i>after</i></b> finishing the previous step use {@link #thenFork(Supplier, String)}.
+	 */
+	public VirtualPromise<Void> thenFork(@Nullable String threadName, VirtualPromise<?>... promises) {
+		return stateVoid(
+				Optional.ofNullable(threadName).orElse("join"),
+				() -> Stream.of(promises)
+				            .map(p -> {
+					            p.join();
+					            return p.getException();
+				            })
+				            .filter(Objects::nonNull)
+				            .findAny()
+				            .ifPresent(exception::set)
+		);
 	}
 	
 	/**
@@ -370,27 +341,20 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * The provided promises will execute parallel to ongoing pipeline, and begin as soon as it states this step. To fork promises <b><i>after</i></b> finishing the previous step use {@link #thenFork(Supplier, String)}.
+	 * Joins provided fork of promises, which will begin executions <b><i>after</i></b> finishing the previous step.
 	 */
-	public VirtualPromise<Void> thenFork(@Nullable String threadName, VirtualPromise<?>... promises) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "join")).unstarted(() -> {
-			try {
-				Stream.of(promises)
-				      .map(p -> {
-					      p.join();
-					      return p.getException();
-				      })
-				      .filter(Objects::nonNull)
-				      .findAny()
-				      .ifPresent(exception::set);
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+	public VirtualPromise<Void> thenFork(Supplier<Stream<VirtualPromise<?>>> promises, @Nullable String threadName) {
+		return stateVoid(
+				Optional.ofNullable(threadName).orElse("join"),
+				() -> promises.get()
+				              .map(p -> {
+					              p.join();
+					              return p.getException();
+				              })
+				              .filter(Objects::nonNull)
+				              .findAny()
+				              .ifPresent(exception::set)
+		);
 	}
 	
 	/**
@@ -401,43 +365,13 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Joins provided fork of promises, which will begin executions <b><i>after</i></b> finishing the previous step.
-	 */
-	public VirtualPromise<Void> thenFork(Supplier<Stream<VirtualPromise<?>>> promises, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "join")).unstarted(() -> {
-			try {
-				promises.get()
-				        .map(p -> {
-					        p.join();
-					        return p.getException();
-				        })
-				        .filter(Objects::nonNull)
-				        .findAny()
-				        .ifPresent(exception::set);
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
-	}
-	
-	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper) {
-		return mapFork(streamSupplier, elementMapper, null);
-	}
-	
-	/**
 	 * @param elementMapper
 	 * 		Throws {@link NullPointerException} if the return of this {@link Function} is {@code null} or of {@link Void} type.
 	 */
 	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val newState = new AtomicReference<Stream<R>>();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "mapFork")).unstarted(() -> {
-			try {
-				if (exception.get() == null) {
+		return stateChange(
+				Optional.ofNullable(threadName).orElse("mapFork"),
+				() -> {
 					val object = objectState.get();
 					val elementsCount = streamSupplier.apply(object).mapToInt(e -> 1).sum();
 					val result = new ConcurrentHashMap<Integer, R>(elementsCount);
@@ -458,36 +392,31 @@ public class VirtualPromise<T> {
 							});
 					
 					// monitor the fork done
-					while (result.size() != elementsCount && exception.get() == null) {
-						Thread.sleep(threadSleepDuration);
+					try {
+						while (result.size() != elementsCount && exception.get() == null) {
+							Thread.sleep(threadSleepDuration);
+						}
+					} catch (InterruptedException e) {
+						setException(e);
 					}
 					
-					if (exception.get() == null)
-						newState.set(result.entrySet()
-						                   .stream()
-						                   .sorted(Comparator.comparingInt(Entry::getKey))
-						                   .map(Entry::getValue));
-				}
-			} catch (Exception e) {
-				exception.compareAndSet(null, e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+					return result.entrySet()
+					             .stream()
+					             .sorted(Comparator.comparingInt(Entry::getKey))
+					             .map(Entry::getValue);
+				});
 	}
 	
-	public <R> VirtualPromise<Void> acceptFork(Function<T, Stream<R>> streamSupplier, Consumer<R> elementConsumer) {
-		return acceptFork(streamSupplier, elementConsumer, null);
+	public <E, R> VirtualPromise<Stream<R>> mapFork(Function<T, Stream<E>> streamSupplier, Function<E, R> elementMapper) {
+		return mapFork(streamSupplier, elementMapper, null);
 	}
 	
 	public <R> VirtualPromise<Void> acceptFork(Function<T, Stream<R>> streamSupplier, Consumer<R> elementConsumer, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "acceptFork")).unstarted(() -> {
-			try {
-				if (exception.get() == null) {
+		return stateVoid(
+				Optional.ofNullable(threadName).orElse("acceptFork"),
+				() -> {
 					val object = objectState.get();
-					val elementsCount = streamSupplier.apply(object).mapToInt(e -> 1).sum();
+					val elementsCount = streamSupplier.apply(object).mapToInt(_ -> 1).sum();
 					val counter = new AtomicInteger();
 					
 					// split to the fork
@@ -505,30 +434,23 @@ public class VirtualPromise<T> {
 							}));
 					
 					// monitor the fork done
-					while (counter.get() != elementsCount) {
-						Thread.sleep(threadSleepDuration);
+					try {
+						while (counter.get() != elementsCount) {
+							Thread.sleep(threadSleepDuration);
+						}
+					} catch (InterruptedException e) {
+						setException(e);
 					}
-					
-				}
-			} catch (Exception e) {
-				exception.compareAndSet(null, e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+				});
+	}
+	
+	public <R> VirtualPromise<Void> acceptFork(Function<T, Stream<R>> streamSupplier, Consumer<R> elementConsumer) {
+		return acceptFork(streamSupplier, elementConsumer, null);
 	}
 	
 	/*
 	 * Error handling
 	 */
-	
-	/**
-	 * @see #catchRun(Consumer, String)
-	 */
-	public VirtualPromise<T> catchRun(Consumer<Throwable> consumer) {
-		return catchRun(consumer, null);
-	}
 	
 	/**
 	 * Resolve any exception, registered up to the current step in the pipeline. Occurrence of the exception prevents the executions down the pipeline, until it is resolved. This step in the pipeline can throw exception, thus overwriting the one being the
@@ -539,21 +461,21 @@ public class VirtualPromise<T> {
 	 * @see #catchExceptions(ExceptionsHandler)
 	 */
 	public VirtualPromise<T> catchRun(Consumer<Throwable> consumer, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "catchRun")).unstarted(() -> {
-			try {
-				val ex = exception.get();
-				if (ex != null) {
-					consumer.accept(ex);
-					exception.set(null);
-				}
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return this;
+		return stateError(Optional.ofNullable(threadName).orElse("catchRun"), () -> consumer.accept(exception.get()));
+	}
+	
+	/**
+	 * @see #catchRun(Consumer, String)
+	 */
+	public VirtualPromise<T> catchRun(Consumer<Throwable> consumer) {
+		return catchRun(consumer, null);
+	}
+	
+	/**
+	 * Resolve like {@link #catchRun(Consumer)}, but instead consuming the exception, supply the pipeline.
+	 */
+	public VirtualPromise<T> catchSupply(Function<Throwable, T> consumeAndSupplyFunction, @Nullable String threadName) {
+		return stateError(Optional.ofNullable(threadName).orElse("catchSupply"), () -> objectState.set(consumeAndSupplyFunction.apply(exception.get())));
 	}
 	
 	/**
@@ -564,24 +486,12 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Resolve like {@link #catchRun(Consumer)}, but instead consuming the exception, supply the pipeline.
+	 * Resolve held exception (if any) by throwing {@link RuntimeException}.
 	 */
-	public VirtualPromise<T> catchSupply(Function<Throwable, T> consumeAndSupplyFunction, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "catchSupply")).unstarted(() -> {
-			try {
-				val ex = exception.get();
-				if (ex != null) {
-					objectState.set(consumeAndSupplyFunction.apply(ex));
-					exception.set(null);
-				}
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
+	public VirtualPromise<T> catchThrow(@Nullable String threadName) {
+		return stateError(Optional.ofNullable(threadName).orElse("catchThrow"), () -> {
+			throw new RuntimeException(exception.get());
 		});
-		threads.offer(thread);
-		return this;
 	}
 	
 	/**
@@ -589,23 +499,6 @@ public class VirtualPromise<T> {
 	 */
 	public VirtualPromise<T> catchThrow() {
 		return catchThrow(null);
-	}
-	
-	/**
-	 * Resolve held exception (if any) by throwing {@link RuntimeException}.
-	 */
-	public VirtualPromise<T> catchThrow(@Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "catchThrow")).unstarted(() -> {
-			
-			val ex = exception.get();
-			if (ex != null) {
-				throw new RuntimeException(ex);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return this;
 	}
 	
 	/**
@@ -646,17 +539,7 @@ public class VirtualPromise<T> {
 	 * @see #mirror(Supplier[])
 	 */
 	public VirtualPromise<T> monitor(Consumer<VirtualPromise<T>> actionOnSelf, @Nullable String threadName) {
-		stepsCount.getAndIncrement();
-		val thread = Thread.ofVirtual().name(constructName(threadName, "monitor")).unstarted(() -> {
-			try {
-				if (exception.get() == null) actionOnSelf.accept(this);
-			} catch (Exception e) {
-				setException(e);
-			}
-			arriveAndStartNextThread();
-		});
-		threads.offer(thread);
-		return this;
+		return stateKeep(Optional.ofNullable(threadName).orElse("monitor"), () -> actionOnSelf.accept(this));
 	}
 	
 	/**
@@ -680,51 +563,26 @@ public class VirtualPromise<T> {
 				cancelAndDrop();
 				return;
 			}
-			while (promise.isOnHold()) {
-				if (promise.hasException() || promise.isIdle()) {
-					cancelAndDrop();
-					return;
-				}
-				try {
+			try {
+				while (promise.isOnHold()) {
+					if (promise.hasException() || promise.isIdle()) {
+						cancelAndDrop();
+						return;
+					}
 					Thread.sleep(threadSleepDuration);
-				} catch (Exception e) {
-					setException(e);
 				}
+			} catch (InterruptedException e) {
+				setException(e);
 			}
 		}));
 	}
 	
 	/*
-	 * Private tools
+	 * Information
 	 */
 	
-	private void arriveAndStartNextThread() {
-		stepsCount.getAndDecrement();
-		takeNextThread();
-	}
-	
-	private void takeNextThread() {
-		val thread = Thread.ofVirtual().name("%s queue watcher".formatted(pipelineName.get())).unstarted(() -> {
-			activeWorker.set(null);
-			if (!holdState.get()) {
-				try {
-					while (threads.isEmpty())
-						Thread.sleep(threadSleepDuration); // possible pinning with take()?
-					val next = threads.poll();
-					activeWorker.set(next);
-					next.start();
-				} catch (InterruptedException e) {
-					holdState.set(true);
-				}
-			}
-			queueWatcher.set(null);
-		});
-		queueWatcher.set(thread);
-		thread.start();
-	}
-	
 	/**
-	 * Sets the pipeline name for the <b><i>next</i></b> steps.
+	 * Sets the pipeline name for the <b><i>next</i></b> steps. To make as step, use with {@link #monitor(Consumer, String)}.
 	 *
 	 * @see #as(String)
 	 */
@@ -736,6 +594,7 @@ public class VirtualPromise<T> {
 	/**
 	 * Uses current {@link #objectState} as the source for the name.
 	 *
+	 * @apiNote The action is performed at the step declaration, so the object state can be {@code null}.
 	 * @see #name(String)
 	 */
 	public VirtualPromise<T> name(Function<T, String> withCurrentObject) {
@@ -743,10 +602,26 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
+	/**
+	 * @return Current name set for pipeline.
+	 */
 	public String getName() {
 		return pipelineName.get();
 	}
 	
+	/**
+	 * Active thread name has a format of {@code "pipelineName: [threadName]"}, where, by default, it gets a name from corresponding pipeline task (i.e. "thenRun").
+	 */
+	public String getActiveWorkerName() {
+		return activeWorker.get().getName();
+	}
+	
+	/**
+	 * Setting exception can infer the pipeline execution.
+	 *
+	 * @see #catchRun(Consumer, String)
+	 * @see #catchExceptions(ExceptionsHandler)
+	 */
 	public void setException(Throwable exc) {
 		if (!Optional.ofNullable(exceptionsHandler.get())
 		             .map(h -> {
@@ -754,7 +629,15 @@ public class VirtualPromise<T> {
 			             return h.overridePipelineHandlers;
 		             })
 		             .orElse(false)
-		) exception.set(exc);
+		) exception.compareAndSet(null, exc);
+	}
+	
+	public @Nullable Throwable getException() {
+		return exception.get();
+	}
+	
+	public boolean hasException() {
+		return exception.get() != null;
 	}
 	
 	/**
@@ -768,13 +651,55 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
-	private String constructName(String threadName, String defaultName) {
-		return "%s: [%s]".formatted(pipelineName.get(), threadName == null ? defaultName : threadName);
+	/**
+	 * True if all threads in pipeline completed their tasks, and it is ready to return result.
+	 */
+	public boolean isComplete() {
+		return stepsCount.get() == 0;
+	}
+	
+	/**
+	 * True if there is any thread working at the moment.
+	 */
+	public boolean isActive() {
+		return activeWorker.get() != null;
+	}
+	
+	/**
+	 * True if there is any thread working at the moment or any thread watching the queue.
+	 */
+	public boolean isAlive() {
+		return activeWorker.get() != null || queueWatcher.get() != null;
+	}
+	
+	/**
+	 * Is on hold and has no further steps to follow. I.e. as a result of {@link #cancelAndDrop()}.
+	 */
+	public boolean isIdle() {
+		return isOnHold() && threads.isEmpty();
+	}
+	
+	/**
+	 * @see #holdState
+	 */
+	public boolean isOnHold() {
+		return holdState.get();
+	}
+	
+	public boolean isDropped() {
+		return isIdle() && stepsCount.get() > 0;
 	}
 	
 	/*
-	 * Handling
+	 * Results handling and control
 	 */
+	
+	/**
+	 * Get current state of the object.
+	 */
+	public T peek() {
+		return objectState.get();
+	}
 	
 	/**
 	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object.
@@ -784,13 +709,13 @@ public class VirtualPromise<T> {
 	public Optional<T> join() {
 		// phaser.arriveAndAwaitAdvance(); AWAIT ADVANCE IS PINNING VIRTUAL THREADS :(
 		if (!holdState.get()) {
-			while (!isComplete() || isActive()) {
-				if (isIdle() || hasException()) break;
-				try {
+			try {
+				while (!isComplete() || isActive()) {
+					if (isIdle() || hasException()) break;
 					Thread.sleep(threadSleepDuration);
-				} catch (InterruptedException e) {
-					throw new RuntimeException(e);
 				}
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
 			}
 		}
 		return Optional.ofNullable(objectState.get());
@@ -805,12 +730,12 @@ public class VirtualPromise<T> {
 		return this.catchThrow().join();
 	}
 	
-	public T peek() {
-		return objectState.get();
-	}
-	
-	public @Nullable Throwable getException() {
-		return exception.get();
+	/**
+	 * @see #holdState
+	 */
+	public VirtualPromise<T> setOnHold() {
+		holdState.set(true);
+		return this;
 	}
 	
 	/**
@@ -870,54 +795,14 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * True if all threads in pipeline completed their tasks, and it is ready to return result.
-	 */
-	public boolean isComplete() {
-		return stepsCount.get() == 0;
-	}
-	
-	/**
-	 * True if there is any thread working at the moment.
-	 */
-	public boolean isActive() {
-		return activeWorker.get() != null;
-	}
-	
-	/**
-	 * True if there is any thread working at the moment or any thread watching the queue.
-	 */
-	public boolean isAlive() {
-		return activeWorker.get() != null || queueWatcher.get() != null;
-	}
-	
-	/**
-	 * Is on hold and has no further steps to follow. I.e. as a result of {@link #cancelAndDrop()}.
-	 */
-	public boolean isIdle() {
-		return isOnHold() && threads.isEmpty();
-	}
-	
-	/**
+	 * If the pipeline is not {@link #isAlive() alive}, begin the executions by invoking the next thread in line. The pipeline can still be on {@link #holdState}, then this method won't trigger further execution.
+	 *
 	 * @see #holdState
+	 * @see #resumeNext()
 	 */
-	public boolean isOnHold() {
-		return holdState.get();
-	}
-	
-	/**
-	 * @see #holdState
-	 */
-	public VirtualPromise<T> setOnHold() {
-		holdState.set(true);
+	public VirtualPromise<T> start() {
+		if (!isAlive()) takeNextThread();
 		return this;
-	}
-	
-	public boolean isDropped() {
-		return isIdle() && stepsCount.get() > 0;
-	}
-	
-	public boolean hasException() {
-		return exception.get() != null;
 	}
 	
 	/**
@@ -928,17 +813,6 @@ public class VirtualPromise<T> {
 	 */
 	public VirtualPromise<T> resume() {
 		holdState.set(false);
-		return this;
-	}
-	
-	/**
-	 * If the pipeline is not {@link #isAlive() alive}, begin the executions by invoking the next thread in line. The pipeline can still be on {@link #holdState}, then this method won't trigger further execution.
-	 *
-	 * @see #holdState
-	 * @see #resumeNext()
-	 */
-	public VirtualPromise<T> start() {
-		if (!isAlive()) takeNextThread();
 		return this;
 	}
 	
@@ -965,35 +839,16 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
-	/**
-	 * Active thread name has a format of {@code "pipelineName: [threadName]"}, where, by default, it gets a name from corresponding pipeline task (i.e. "thenRun").
-	 */
-	public String getActiveVirtualName() {
-		return activeWorker.get().getName();
-	}
-	
-	public VirtualPromise<Void> toVoid() {
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
-	}
-	
 	/*
-	 * Virtual CompletableFuture Factory
+	 * CompletableFuture Mutation
 	 */
-	
-	public static CompletableFuture<Void> futureRun(Runnable runnable) {
-		return CompletableFuture.runAsync(runnable, virtualExecutor);
-	}
-	
-	public static <F> CompletableFuture<F> futureSupply(Supplier<F> supplier) {
-		return CompletableFuture.supplyAsync(supplier, virtualExecutor);
-	}
 	
 	public static <T> VirtualPromise<T> fromFuture(CompletableFuture<T> future) {
 		return VirtualPromise.supply(future::join);
 	}
 	
 	public CompletableFuture<T> toFuture() {
-		return futureSupply(() -> joinThrow().orElse(null));
+		return CompletableFuture.supplyAsync(() -> joinThrow().orElse(null));
 	}
 	
 }

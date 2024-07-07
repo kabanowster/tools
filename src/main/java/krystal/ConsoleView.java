@@ -286,7 +286,9 @@ public class ConsoleView {
 	 */
 	public void setStyle(String styles) {
 		Optional.ofNullable(contentDocument.head().getElementsByTag("style").first())
-		        .orElseGet(() -> new Element("style").attr("type", "text/css").appendTo(contentDocument.head()))
+		        .orElseGet(() -> new Element("style")
+				                         .attr("type", "text/css")
+				                         .appendTo(contentDocument.head()))
 		        .text(styles);
 	}
 	
@@ -324,12 +326,12 @@ public class ConsoleView {
 						                        color: rgb(245,245,245);
 						                    }
 						                    pre {
-						                        margin: 0 px;
+						                        margin: 0px;
 						                    }
-					                        main {
+					                        #main {
 				                                display: flex;
 						                        flex-direction: column;
-						                        font-size: 11 px;
+						                        font-size: 11px;
 						                        font-family: monospaced;
 						                    }
 						                    .info {color: rgb(0, 153, 255);}
@@ -343,14 +345,15 @@ public class ConsoleView {
 	}
 	
 	public Element getContent() {
-		return Optional.ofNullable(contentDocument.body().getElementsByTag("main").getFirst())
-		               .orElseGet(() -> new Element("main").appendTo(contentDocument.body()));
+		return Optional.ofNullable(contentDocument.body().getElementById("main"))
+		               .orElseGet(() -> new Element("div").id("main").appendTo(contentDocument.body()));
 	}
 	
 	private Document createBaseDocument() {
 		return Document.createShell("")
 		               .body()
-		               .appendElement("main")
+		               .appendElement("div")
+		               .id("main")
 		               .ownerDocument();
 	}
 	

@@ -237,4 +237,14 @@ public class Tools {
 		return true; // "everythingElseBut" passed
 	}
 	
+	/**
+	 * When checking the String with regex pattern, the special regex characters must be escaped.
+	 */
+	public String escapeRegexSpecials(String fromString) {
+		val regexSpecials = "[?^$|.+*\\\\]";
+		return Arrays.stream(fromString.splitWithDelimiters(regexSpecials, 0))
+		             .map(sub -> sub.matches(regexSpecials) ? "\\" + sub : sub)
+		             .collect(Collectors.joining());
+	}
+	
 }

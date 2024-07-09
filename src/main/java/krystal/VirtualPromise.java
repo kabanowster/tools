@@ -19,7 +19,10 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.*;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -253,11 +256,14 @@ public class VirtualPromise<T> {
 		return map(function, null);
 	}
 	
-	public VirtualPromise<T> apply(UnaryOperator<T> updater, @Nullable String threadName) {
-		return stateKeep(Optional.ofNullable(threadName).orElse("apply"), () -> objectState.getAndUpdate(updater));
+	public VirtualPromise<T> apply(Consumer<T> updater, @Nullable String threadName) {
+		return stateKeep(Optional.ofNullable(threadName).orElse("apply"), () -> objectState.getAndUpdate(o -> {
+			updater.accept(o);
+			return o;
+		}));
 	}
 	
-	public VirtualPromise<T> apply(UnaryOperator<T> updater) {
+	public VirtualPromise<T> apply(Consumer<T> updater) {
 		return apply(updater, null);
 	}
 	

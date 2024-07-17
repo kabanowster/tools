@@ -29,7 +29,6 @@ import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -47,8 +46,6 @@ public class ConsoleView {
 	private final JTextField commandPrompt;
 	private final List<String> commandStack = new ArrayList<>(List.of(""));
 	private int commandSelected;
-	private final AtomicBoolean toUpdate = new AtomicBoolean(false);
-	private final Thread revalidator;
 	
 	/**
 	 * Creates a simple Swing window to output log events.
@@ -233,31 +230,19 @@ public class ConsoleView {
 			
 			@Override
 			public void append(LogEvent event) {
-				new Element("div").appendTo(getContent())
-				                  .addClass(event.getLevel().name().toLowerCase())
-				                  .appendElement("pre")
-				                  .append(loggingPattern.toSerializable(event));
-				toUpdate.set(true);
+				EventQueue.invokeLater(() -> {
+					new Element("div").appendTo(getContent())
+					                  .addClass(event.getLevel().name().toLowerCase())
+					                  .appendElement("pre")
+					                  .append(loggingPattern.toSerializable(event));
+					revalidate();
+				});
 			}
 			
 		};
 		
 		logger.addAppender(appender);
 		appender.start();
-		
-		/*
-		 * Revalidation watcher to keep the content refresh rate constant
-		 */
-		
-		revalidator = Thread.ofVirtual().name("ConsoleView Revalidation Watcher").start(() -> {
-			try {
-				while (true) {
-					if (toUpdate.get()) revalidate();
-					Thread.sleep(500);
-				}
-			} catch (InterruptedException _) {
-			}
-		});
 		
 		log.fatal("=== Custom Console Viewer created and logger wired.");
 	}
@@ -275,14 +260,9 @@ public class ConsoleView {
 	 * Refresh the content and swing window and scroll to bottom if set.
 	 */
 	public void revalidate() {
-		EventQueue.invokeLater(() -> {
-			synchronized (toUpdate) {
-				output.setText(contentDocument.outerHtml());
-				frame.revalidate();
-				if (optionAutoScroll.isSelected()) scrollToBottom();
-				toUpdate.set(false);
-			}
-		});
+		output.setText(contentDocument.outerHtml());
+		frame.revalidate();
+		if (optionAutoScroll.isSelected()) scrollToBottom();
 	}
 	
 	/**
@@ -298,7 +278,6 @@ public class ConsoleView {
 	 */
 	public void dispose() {
 		frame.dispose();
-		revalidator.interrupt();
 	}
 	
 	/*

@@ -23,7 +23,7 @@ import java.util.stream.Stream;
 /**
  * Class wrapping {@link JSONObject} - utilities for deep (de)serialization of objects.
  *
- * @see #from(Object)
+ * @see #fromObject(Object)
  * @see #into(Object, Class, Type...)
  */
 @UtilityClass
@@ -34,24 +34,46 @@ public class JSON {
 	 * Serialize Object into {@link JSONObject}. Fields marked with {@link Skip @Skip} will be skipped.
 	 *
 	 * @param obj
-	 *        {@link Collection}, {@link Map}, array or object of class marked with {@link Flattison @Flattison}.
+	 *        {@link Map}, object of class marked with {@link Flattison @Flattison} or regular object to be serialized with {@link JSONObject#JSONObject(Object)} constructor.
 	 * @return If null obj provided - will return empty {@link JSONObject}.
 	 */
-	public JSONObject from(Object obj) {
+	public JSONObject fromObject(Object obj) {
 		if (obj == null) return new JSONObject();
-		
 		val flattison = flattison(obj);
 		if (Map.class.isAssignableFrom(flattison.getClass())) {
 			return new JSONObject((Map<?, ?>) flattison);
 		} else {
-			return new JSONObject(Map.of("list", flattison));
+			return new JSONObject(flattison);
 		}
 	}
 	
-	public JSONObject from(Object obj, String... fields) {
-		return new JSONObject(from(obj), fields);
+	public JSONObject fromObject(Object obj, String... fields) {
+		return new JSONObject(fromObject(obj), fields);
 	}
 	
+	/**
+	 * Serialize Iterable, Collection or Array into {@link JSONArray}.
+	 *
+	 * @param arrayOrCollection
+	 *        {@link Collection}, {@link Iterable} or {@link Array} of objects. Performs serialization of child elements.
+	 * @return If null obj provided - will return empty {@link JSONArray}.
+	 */
+	public JSONArray fromObjects(Object arrayOrCollection) {
+		if (arrayOrCollection == null) return new JSONArray();
+		val flattison = flattison(arrayOrCollection);
+		val flattisonClass = flattison.getClass();
+		if (Collection.class.isAssignableFrom(flattisonClass)) {
+			return new JSONArray((Collection<?>) flattison);
+		} else if (Iterable.class.isAssignableFrom(flattisonClass)) {
+			return new JSONArray((Iterable<?>) flattison);
+		} else {
+			return new JSONArray(flattison);
+		}
+	}
+	
+	/**
+	 * Recursively prep object and its fields for serialization by changing it into Map or Collection.
+	 */
 	private Object flattison(Object obj) {
 		if (obj == null) return null;
 		val clazz = obj.getClass();
@@ -91,30 +113,25 @@ public class JSON {
 	 * conflicts
 	 * or missing values will be skipped, as well as fields marked with {@link Skip @Skip}.
 	 *
-	 * @param json
+	 * @param fromJson
 	 *        {@link JSONObject}, {@link JSONArray} or object of class marked with {@link Flattison @Flattison}. Otherwise, this function returns object as it is;
 	 * @param clazz
-	 * 		Class of the provided json object to be deserialized into;
+	 * 		Class of the provided fromJson object to be deserialized into;
 	 * @param innerTypes
-	 * 		If the provided json object is a collection, this parameter is mandatory to determine the classes of the child elements. In other cases, can be skipped.
+	 * 		If the provided fromJson object is a collection, this parameter is mandatory to determine the classes of the child elements. In other cases, can be skipped.
 	 */
-	public Object into(Object json, Class<?> clazz, Type... innerTypes) {
+	public Object into(Object fromJson, Class<?> clazz, Type... innerTypes) {
 		
-		if (json instanceof JSONArray jsonArray) {
-			// value is a collection of List or Set
-			
+		if (fromJson instanceof JSONArray jsonArray) {
+			// fromJson is a collection or array
 			val collection = Set.class.isAssignableFrom(clazz) ? new LinkedHashSet<>() : new LinkedList<>();
 			val types = innerTypes.length == 1 ? Tools.determineParameterTypes(innerTypes[0]) : Tools.determineParameterTypes(null);
 			
 			for (var element : jsonArray) collection.add(into(element, types.clazz(), types.types()));
 			return clazz.isArray() ? collection.toArray((Object[]) Array.newInstance(clazz.getComponentType(), collection.size())) : collection;
-			
-		} else if (json instanceof JSONObject jsonObject) {
-			if (jsonObject.length() == 1 && jsonObject.has("list")) {
-				// value is serialized list or array
-				return into(jsonObject.get("list"), clazz, innerTypes);
-			} else if (Map.class.isAssignableFrom(clazz)) {
-				// value is a declared map
+		} else if (fromJson instanceof JSONObject jsonObject) {
+			if (Map.class.isAssignableFrom(clazz)) {
+				// fromJson is a map
 				
 				val map = new LinkedHashMap<>();
 				val types = innerTypes.length == 2 ? Tools.determineParameterTypes(innerTypes[1]) : Tools.determineParameterTypes(null);
@@ -125,7 +142,7 @@ public class JSON {
 				return map;
 				
 			} else if (clazz.isAnnotationPresent(Flattison.class)) {
-				// value is declared serializable object
+				// fromJson is serializable object
 				
 				try {
 					val result = clazz.getDeclaredConstructor().newInstance();
@@ -190,8 +207,8 @@ public class JSON {
 			}
 		} else {
 			
-			// json is just a regular value of type clazz
-			return json;
+			// fromJson is just a regular value of type clazz
+			return fromJson;
 		}
 		
 		return null;
@@ -199,6 +216,8 @@ public class JSON {
 	
 	/**
 	 * Mark class that will be (de-)serialized to/from JSON using fields values directly and recursively - for {@link Flattison @Flattison} objects and collections members.
+	 *
+	 * @see JSON
 	 */
 	@Target(ElementType.TYPE)
 	@Retention(RetentionPolicy.RUNTIME)

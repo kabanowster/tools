@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 /**
  * Class wrapping {@link JSONObject} - utilities for deep (de)serialization of objects.
  *
+ * @apiNote {@link Enum Enums} require {@link Deserializer}!
  * @see #fromObject(Object)
  * @see #into(Object, Class, Type...)
  */
@@ -206,7 +207,6 @@ public class JSON {
 				
 			}
 		} else {
-			
 			// fromJson is just a regular value of type clazz
 			return fromJson;
 		}
@@ -226,7 +226,8 @@ public class JSON {
 	}
 	
 	/**
-	 * Mark setter method to be used in deserialization for the given field. Usable for fields of type other than {@link Map}, {@link Collection} types or {@link Flattison @Flattison} class and outside primitive scope. I.e. Interfaces and Enums.
+	 * Mark setter method to be used in deserialization for the given field. Usable for fields of type other than {@link Map}, {@link Collection} types or {@link Flattison @Flattison} class and outside primitive scope. I.e. Interfaces and
+	 * <b><i>{@link Enum}</i></b>.
 	 */
 	@Target(ElementType.METHOD)
 	@Retention(RetentionPolicy.RUNTIME)

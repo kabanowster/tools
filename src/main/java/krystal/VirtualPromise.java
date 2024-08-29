@@ -120,6 +120,13 @@ public class VirtualPromise<T> {
 		return new VirtualPromise<>(pipelineName);
 	}
 	
+	/**
+	 * Return blank, inactive VirtualPromise.
+	 */
+	public static VirtualPromise<Void> plain() {
+		return new VirtualPromise<>();
+	}
+	
 	public static VirtualPromise<Void> run(Runnable runnable, @Nullable String threadName) {
 		return new VirtualPromise<>(runnable, threadName);
 	}
@@ -539,8 +546,8 @@ public class VirtualPromise<T> {
 	 */
 	
 	/**
-	 * Take {@link Consumer} action on current {@link VirtualPromise}.
-	 * I.e. this step can be used to create dependencies on other {@link VirtualPromise}, at the time of evaluation.
+	 * Take {@link Consumer} action on current .
+	 * I.e. this step can be used to create dependencies on other , at the time of evaluation.
 	 *
 	 * @see #mirror(Supplier[])
 	 */

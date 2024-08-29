@@ -1,5 +1,6 @@
 package krystal;
 
+import krystal.Skip.SkipTypes;
 import lombok.val;
 
 import java.lang.annotation.ElementType;
@@ -57,10 +58,16 @@ public interface CheckImportantFieldsInterface {
 		
 		return Arrays.stream(clazz.getDeclaredFields())
 		             .filter(f -> f.trySetAccessible()
-				                          && explicitCheck ? f.isAnnotationPresent(ImportantField.class) : !f.isAnnotationPresent(NotImportantField.class)
+				                          && explicitCheck
+		                          ? f.isAnnotationPresent(ImportantField.class)
+		                          : (!f.isAnnotationPresent(NotImportantField.class)
+				                             && !Tools.isSkipped(f, SkipTypes.importance))
 		             );
 	}
 	
+	/**
+	 * {@link Skip} with {@link SkipTypes#importance} can be used instead.
+	 */
 	@Target({ElementType.FIELD})
 	@Retention(RetentionPolicy.RUNTIME)
 	@interface NotImportantField {

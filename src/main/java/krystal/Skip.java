@@ -1,5 +1,7 @@
 package krystal;
 
+import krystal.CheckImportantFieldsInterface.NotImportantField;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -44,7 +46,11 @@ public @interface Skip {
 		/**
 		 * Mark fields which will be filtered-out for {@link StringRenderer#renderObjects(List)};
 		 */
-		render
+		render,
+		/**
+		 * Equivalent of {@link NotImportantField}.
+		 */
+		importance
 	}
 	
 }

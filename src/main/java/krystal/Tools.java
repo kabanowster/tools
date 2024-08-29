@@ -177,6 +177,24 @@ public class Tools {
 	}
 	
 	/**
+	 * Invoke annotated void methods for given object.
+	 */
+	public <A extends Annotation, I> void runAnnotatedMethods(Class<A> annotation, I invokedOn) {
+		Stream.of(invokedOn.getClass().getDeclaredMethods())
+		      .filter(m -> m.trySetAccessible()
+				                   && m.isAnnotationPresent(annotation)
+				                   && m.getReturnType().equals(void.class))
+		      .forEach(m -> {
+			      try {
+				      m.invoke(invokedOn);
+			      } catch (IllegalAccessException _) {
+			      } catch (InvocationTargetException e) {
+				      throw new RuntimeException("%s annotated method throws exception: %s.".formatted(m.getName(), e.getMessage()), e);
+			      }
+		      });
+	}
+	
+	/**
 	 * Splits given class type into raw class and type arguments.
 	 *
 	 * @return Tuple of Class and populated Type[] if any, empty otherwise. I.e. {@code List<Map<String,Set>>} returns {@code Pair<List, Map<String,Set>>}.

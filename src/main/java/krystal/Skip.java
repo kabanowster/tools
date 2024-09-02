@@ -42,7 +42,7 @@ public @interface Skip {
 		/**
 		 * Mark fields to be skipped in (de-)serializations in {@link JSON} tool.
 		 */
-		skipson,
+		json,
 		/**
 		 * Mark fields which will be filtered-out for {@link StringRenderer#renderObjects(List)};
 		 */

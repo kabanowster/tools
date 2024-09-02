@@ -23,7 +23,7 @@ import java.util.stream.Stream;
 /**
  * Class wrapping {@link JSONObject} - utilities for deep (de)serialization of objects.
  *
- * @apiNote {@link Enum Enums} require {@link Deserializer}!
+ * @apiNote {@link Enum Enums} and {@link Collection Collections} require {@link Deserializer}!
  * @see #fromObject(Object)
  * @see #into(Object, Class, Type...)
  */
@@ -92,7 +92,7 @@ public class JSON {
 			
 			Stream.of(clazz.getDeclaredFields())
 			      .forEach(f -> {
-				      if (Tools.isSkipped(f, SkipTypes.skipson)) return;
+				      if (Tools.isSkipped(f, SkipTypes.json)) return;
 				      
 				      Object value = null;
 				      if (f.trySetAccessible()) {
@@ -172,7 +172,7 @@ public class JSON {
 							      ));
 					
 					Stream.of(clazz.getDeclaredFields())
-					      .filter(f -> !Tools.isSkipped(f, SkipTypes.skipson) && f.trySetAccessible())
+					      .filter(f -> !Tools.isSkipped(f, SkipTypes.json) && f.trySetAccessible())
 					      .forEach(f -> {
 						      val name = f.getName();
 						      val type = f.getType();
@@ -217,6 +217,7 @@ public class JSON {
 	/**
 	 * Mark class that will be (de-)serialized to/from JSON using fields values directly and recursively - for {@link Flattison @Flattison} objects and collections members.
 	 *
+	 * @apiNote {@link Enum Enums} and {@link Collection Collections} require {@link Deserializer}!
 	 * @see JSON
 	 */
 	@Target(ElementType.TYPE)

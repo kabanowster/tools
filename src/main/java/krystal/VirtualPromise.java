@@ -121,10 +121,11 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Return blank, inactive VirtualPromise.
+	 * Return blank run VirtualPromise.
 	 */
 	public static VirtualPromise<Void> plain() {
-		return new VirtualPromise<>();
+		return VirtualPromise.run(() -> {
+		});
 	}
 	
 	public static VirtualPromise<Void> run(Runnable runnable, @Nullable String threadName) {

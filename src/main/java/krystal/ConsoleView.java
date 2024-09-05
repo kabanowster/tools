@@ -29,6 +29,7 @@ import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -46,6 +47,8 @@ public class ConsoleView {
 	private final JTextField commandPrompt;
 	private final List<String> commandStack = new ArrayList<>(List.of(""));
 	private int commandSelected;
+	private Thread messagesConsumer;
+	private final LinkedBlockingQueue<Element> messagesStack = new LinkedBlockingQueue<>();
 	
 	/**
 	 * Creates a simple Swing window to output log events.
@@ -230,19 +233,17 @@ public class ConsoleView {
 			
 			@Override
 			public void append(LogEvent event) {
-				EventQueue.invokeLater(() -> {
-					new Element("div").appendTo(getContent())
-					                  .addClass(event.getLevel().name().toLowerCase())
-					                  .appendElement("pre")
-					                  .append(loggingPattern.toSerializable(event));
-					revalidate();
-				});
+				val log = new Element("div").addClass(event.getLevel().name().toLowerCase());
+				log.appendElement("pre")
+				   .append(loggingPattern.toSerializable(event));
+				messagesStack.offer(log);
 			}
 			
 		};
-		
 		logger.addAppender(appender);
 		appender.start();
+		
+		startMessagesConsumer();
 		
 		log.fatal("=== Custom Console Viewer created and logger wired.");
 	}
@@ -251,9 +252,11 @@ public class ConsoleView {
 	 * Scroll down to last message and focus on input field.
 	 */
 	public void scrollToBottom() {
-		val bar = scroll.getVerticalScrollBar();
-		bar.setValue(bar.getMaximum());
-		commandPrompt.requestFocus();
+		EventQueue.invokeLater(() -> {
+			val bar = scroll.getVerticalScrollBar();
+			bar.setValue(bar.getMaximum());
+			commandPrompt.requestFocus();
+		});
 	}
 	
 	/**
@@ -269,14 +272,17 @@ public class ConsoleView {
 	 * Clear log messages from the view.
 	 */
 	public void clear() {
-		getContent().children().remove();
-		revalidate();
+		EventQueue.invokeLater(() -> {
+			getContent().children().remove();
+			revalidate();
+		});
 	}
 	
 	/**
 	 * @see JFrame#dispose()
 	 */
 	public void dispose() {
+		killMessagesConsumer();
 		frame.dispose();
 	}
 	
@@ -358,6 +364,38 @@ public class ConsoleView {
 		               .appendElement("div")
 		               .id("main")
 		               .ownerDocument();
+	}
+	
+	/**
+	 * Thread to print messages in console with fixed interval to ensure stability;
+	 */
+	@SuppressWarnings("InfiniteLoopStatement")
+	private void startMessagesConsumer() {
+		if (messagesConsumer == null) {
+			messagesConsumer = Thread.startVirtualThread(() -> {
+				while (true) {
+					while (messagesStack.isEmpty()) {
+						try {
+							Thread.sleep(100);
+						} catch (InterruptedException _) {
+						}
+					}
+					val content = getContent();
+					// process 10 messages at a time
+					for (int i = 0; i < 10; i++) {
+						if (messagesStack.isEmpty()) break;
+						messagesStack.poll().appendTo(content);
+					}
+					EventQueue.invokeLater(this::revalidate);
+				}
+			});
+		}
+	}
+	
+	private void killMessagesConsumer() {
+		Optional.ofNullable(messagesConsumer)
+		        .ifPresent(Thread::interrupt);
+		messagesConsumer = null;
 	}
 	
 }

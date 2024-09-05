@@ -215,6 +215,25 @@ public class JSON {
 	}
 	
 	/**
+	 * With a constructor marked as {@link Deserializer} and having a single argument of {@link JSONObject}, deserialize into given class.
+	 */
+	@SuppressWarnings("unchecked")
+	public <T> T into(Class<T> into, JSONObject from) {
+		return Arrays.stream(into.getDeclaredConstructors())
+		             .filter(c -> c.trySetAccessible() && (c.isAnnotationPresent(Deserializer.class)) && c.getParameterCount() == 1)
+		             .filter(c -> c.getParameterTypes()[0].equals(JSONObject.class))
+		             .findFirst()
+		             .map(c -> {
+			             try {
+				             return (T) c.newInstance(from);
+			             } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+				             throw new RuntimeException(e);
+			             }
+		             })
+		             .orElseThrow();
+	}
+	
+	/**
 	 * Mark class that will be (de-)serialized to/from JSON using fields values directly and recursively - for {@link Flattison @Flattison} objects and collections members.
 	 *
 	 * @apiNote {@link Enum Enums} and {@link Collection Collections} require {@link Deserializer}!
@@ -228,9 +247,9 @@ public class JSON {
 	
 	/**
 	 * Mark setter method to be used in deserialization for the given field. Usable for fields of type other than {@link Map}, {@link Collection} types or {@link Flattison @Flattison} class and outside primitive scope. I.e. Interfaces and
-	 * <b><i>{@link Enum}</i></b>.
+	 * <b><i>{@link Enum}</i></b>. Also, can be used to mark constructors deserializing {@link JSONObject} for {@link #into(Class, JSONObject)} method.
 	 */
-	@Target(ElementType.METHOD)
+	@Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
 	@Retention(RetentionPolicy.RUNTIME)
 	public @interface Deserializer {
 		

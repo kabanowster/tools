@@ -716,7 +716,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object.
+	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object. The VP becomes {@link #cancel() cancelled} after returning the result.
 	 *
 	 * @see #holdState
 	 */
@@ -732,6 +732,7 @@ public class VirtualPromise<T> {
 				throw new RuntimeException(e);
 			}
 		}
+		cancel();
 		return Optional.ofNullable(objectState.get());
 	}
 	
@@ -753,7 +754,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Join the active worker, hold further pipeline executions, and get the result.
+	 * Join the active worker, hold further pipeline executions, and get the current result.
 	 *
 	 * @see #holdState
 	 * @see #join()
@@ -799,7 +800,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * {@link #cancel()} and get the current result.
+	 * {@link #cancel()} and get the current result (at this specific moment).
 	 *
 	 * @see #join()
 	 */

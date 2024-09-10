@@ -2,6 +2,7 @@ package krystal;
 
 import com.google.common.base.Strings;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
 import lombok.val;
 import org.apache.logging.log4j.core.LogEvent;
@@ -49,6 +50,18 @@ public class ConsoleView {
 	private int commandSelected;
 	private Thread messagesConsumer;
 	private final LinkedBlockingQueue<Element> messagesStack = new LinkedBlockingQueue<>();
+	/**
+	 * Characters amount limit, upon reaching which, the view will be cleared.
+	 */
+	private static @Setter int charactersLimit = 1000000;
+	/**
+	 * Interval for printing messages (in milliseconds).
+	 */
+	private static @Setter int printingRate = 500;
+	/**
+	 * Print amount of messages with {@link #setPrintingRate(int)}.
+	 */
+	private static @Setter int messagesAtOnce = 20;
 	
 	/**
 	 * Creates a simple Swing window to output log events.
@@ -260,9 +273,10 @@ public class ConsoleView {
 	}
 	
 	/**
-	 * Refresh the content and swing window and scroll to bottom if set.
+	 * Refresh the content and swing window and scroll to bottom if set. Clears content if it reaches the {@link #setCharactersLimit(int)}.
 	 */
 	public void revalidate() {
+		if (contentDocument.outerHtml().length() > charactersLimit) getContent().children().remove();
 		output.setText(contentDocument.outerHtml());
 		frame.revalidate();
 		if (optionAutoScroll.isSelected()) scrollToBottom();
@@ -272,10 +286,8 @@ public class ConsoleView {
 	 * Clear log messages from the view.
 	 */
 	public void clear() {
-		EventQueue.invokeLater(() -> {
-			getContent().children().remove();
-			revalidate();
-		});
+		getContent().children().remove();
+		EventQueue.invokeLater(this::revalidate);
 	}
 	
 	/**
@@ -376,13 +388,13 @@ public class ConsoleView {
 				while (true) {
 					while (messagesStack.isEmpty()) {
 						try {
-							Thread.sleep(100);
+							Thread.sleep(printingRate);
 						} catch (InterruptedException _) {
 						}
 					}
 					val content = getContent();
-					// process 10 messages at a time
-					for (int i = 0; i < 10; i++) {
+					// process # messages at a time
+					for (int i = 0; i < messagesAtOnce; i++) {
 						if (messagesStack.isEmpty()) break;
 						messagesStack.poll().appendTo(content);
 					}

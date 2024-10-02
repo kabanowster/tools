@@ -265,4 +265,11 @@ public class Tools {
 		             .collect(Collectors.joining());
 	}
 	
+	/**
+	 * Strip the string from first and last single and double quotes present and only if.
+	 */
+	public String dequote(String str) {
+		return str.split("(?<=['\"]).*(?=['\"])")[0];
+	}
+	
 }

@@ -110,9 +110,8 @@ public class JSON {
 	
 	/**
 	 * Use this function to deserialize JSON object into provided {@link Flattison @Flattison} class and recursively it's members. Also works with collections and arrays. {@link Flattison @Flattison} classes require No-Args constructor. Fields, that can
-	 * not be written due to type conflicts (i.e. Interfaces or Enums), will use regular setters (methods with names starting with "set", followed by field name, case-insensitive) or methods marked as {@link Deserializer @Deserializer}. Unresolved
-	 * conflicts
-	 * or missing values will be skipped, as well as fields marked with {@link Skip @Skip}.
+	 * not be written due to type conflicts (i.e. Interfaces or Enums), will use regular setters (with argument: Object - methods with names starting with "set", followed by field name, case-insensitive) or methods marked as
+	 * {@link Deserializer @Deserializer}. Unresolved conflicts or missing values will be skipped, as well as fields marked with {@link Skip @Skip}.
 	 *
 	 * @param fromJson
 	 *        {@link JSONObject}, {@link JSONArray} or object of class marked with {@link Flattison @Flattison}. Otherwise, this function returns object as it is;
@@ -157,10 +156,10 @@ public class JSON {
 										      var name = m.getName();
 										      try {
 											      name = m.getAnnotation(Deserializer.class).fieldName();
-										      } catch (NullPointerException e) {
+										      } catch (NullPointerException _) {
 											      try {
 												      name = name.substring(3);
-											      } catch (IndexOutOfBoundsException ignored) {
+											      } catch (IndexOutOfBoundsException _) {
 											      }
 										      }
 										      if (name.isEmpty()) name = m.getName();
@@ -183,16 +182,16 @@ public class JSON {
 							      value = jsonObject.get(name);
 							      value = into(value, type, arguments);
 							      f.set(result, value);
-						      } catch (JSONException ignored) {
+						      } catch (JSONException _) {
 							      log.info("[JSON Deserialization] Value for the key not found in JSON source. Case-sensitive! Skipped field: %s".formatted(name));
-						      } catch (IllegalArgumentException e) {
+						      } catch (IllegalArgumentException _) {
 							      val deserializer = deserializers.get(name.toLowerCase());
 							      if (deserializer != null) {
 								      try {
 									      // method is setter (void)
 									      deserializer.invoke(result, value);
-								      } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException x) {
-									      log.warn("[JSON Deserialization] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s".formatted(type.getSimpleName(), name));
+								      } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
+									      log.warn("[JSON Deserialization] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s".formatted(type.getSimpleName(), name), e);
 								      }
 							      }
 						      } catch (IllegalAccessException e) {

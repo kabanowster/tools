@@ -203,14 +203,10 @@ public class JSON {
 				} catch (InvocationTargetException | InstantiationException | IllegalAccessException | NoSuchMethodException e) {
 					throw new RuntimeException("No-Args constructor is missing for %s class.".formatted(clazz), e);
 				}
-				
 			}
-		} else {
-			// fromJson is just a regular value of type clazz
-			return fromJson;
 		}
-		
-		return null;
+		// regular value or JSONObject
+		return fromJson;
 	}
 	
 	/**

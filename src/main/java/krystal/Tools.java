@@ -161,10 +161,10 @@ public class Tools {
 	/**
 	 * @see #getAnnotatedValues(Class, Class, Class, Object)
 	 */
-	public <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, Class<? extends I> invokedClass, @Nullable I invokedOn) {
+	public @Nullable <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, Class<? extends I> invokedClass, @Nullable I invokedOn) {
 		try {
 			return getAnnotatedValues(annotation, returnType, invokedClass, invokedOn).getFirst();
-		} catch (NoSuchElementException e) {
+		} catch (NoSuchElementException _) {
 			return null;
 		}
 	}
@@ -172,7 +172,7 @@ public class Tools {
 	/**
 	 * @see #getAnnotatedValues(Class, Class, Class, Object)
 	 */
-	public <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, I invokedOn) {
+	public @Nullable <I, T, A extends Annotation> T getFirstAnnotatedValue(Class<A> annotation, Class<T> returnType, @NonNull I invokedOn) {
 		return getFirstAnnotatedValue(annotation, returnType, invokedOn.getClass(), invokedOn);
 	}
 	

@@ -53,7 +53,7 @@ public class ConsoleView {
 	/**
 	 * Characters amount limit, upon reaching which, the view will be cleared.
 	 */
-	private static @Setter int charactersLimit = 1000000;
+	private static @Setter int charactersLimit = 500000;
 	/**
 	 * Interval for printing messages (in milliseconds).
 	 */

@@ -123,6 +123,8 @@ public class JSON {
 	public Object into(Object fromJson, Class<?> clazz, Type... innerTypes) {
 		
 		if (fromJson instanceof JSONArray jsonArray) {
+			if (clazz.equals(JSONArray.class)) return jsonArray;
+			
 			// fromJson is a collection or array
 			val collection = Set.class.isAssignableFrom(clazz) ? new LinkedHashSet<>() : new LinkedList<>();
 			val types = innerTypes.length == 1 ? Tools.determineParameterTypes(innerTypes[0]) : Tools.determineParameterTypes(null);
@@ -130,6 +132,8 @@ public class JSON {
 			for (var element : jsonArray) collection.add(into(element, types.clazz(), types.types()));
 			return clazz.isArray() ? collection.toArray((Object[]) Array.newInstance(clazz.getComponentType(), collection.size())) : collection;
 		} else if (fromJson instanceof JSONObject jsonObject) {
+			if (clazz.equals(JSONObject.class)) return jsonObject;
+			
 			if (Map.class.isAssignableFrom(clazz)) {
 				// fromJson is a map
 				
@@ -191,7 +195,12 @@ public class JSON {
 									      // method is setter (void)
 									      deserializer.invoke(result, value);
 								      } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
-									      log.warn("[JSON Deserialization] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s".formatted(type.getSimpleName(), name), e);
+									      log.warn("[JSON Deserialization] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s, value: (%s) %s".formatted(type.getSimpleName(),
+									                                                                                                                                                                                                      name,
+									                                                                                                                                                                                                      value != null
+									                                                                                                                                                                                                      ? value.getClass()
+									                                                                                                                                                                                                             .getSimpleName()
+									                                                                                                                                                                                                      : "null", value), e);
 								      }
 							      }
 						      } catch (IllegalAccessException e) {

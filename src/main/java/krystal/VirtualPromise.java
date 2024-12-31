@@ -304,6 +304,8 @@ public class VirtualPromise<T> {
 	
 	/**
 	 * The other promise exception affects the current pipeline. Effectively joins provided promise.
+	 *
+	 * @apiNote The {@code otherPromise} is run at <strong>pipeline declaration</strong>, not at the step. To start the promise at the step evaluation, use {@link #compose(Supplier, String)}.
 	 */
 	public <R, O> VirtualPromise<R> compose(VirtualPromise<O> otherPromise, BiFunction<O, T, R> combiner, @Nullable String threadName) {
 		return stateChange(
@@ -627,7 +629,7 @@ public class VirtualPromise<T> {
 	 * Active thread name has a format of {@code "pipelineName: [threadName]"}, where, by default, it gets a name from corresponding pipeline task (i.e. "thenRun").
 	 */
 	public String getActiveWorkerName() {
-		return activeWorker.get().getName();
+		return Optional.ofNullable(activeWorker.get()).map(Thread::getName).orElse("null");
 	}
 	
 	/**
@@ -702,6 +704,27 @@ public class VirtualPromise<T> {
 	
 	public boolean isDropped() {
 		return isIdle() && stepsCount.get() > 0;
+	}
+	
+	public String getStatus() {
+		if (isDropped()) return "dropped";
+		if (isIdle()) return "idle";
+		if (isOnHold()) return "on hold";
+		if (isAlive()) return "alive";
+		if (isComplete()) return "complete";
+		return "unknown";
+	}
+	
+	public String getReport() {
+		return "%s - queue: %s, steps: %s, worker: %s, watcher: %s, exception: %s, status: %s".formatted(
+				getName(),
+				threads.size(),
+				stepsCount.get(),
+				getActiveWorkerName(),
+				queueWatcher.get() != null,
+				Optional.ofNullable(getException()).map(Throwable::toString).orElse("null"),
+				getStatus()
+		);
 	}
 	
 	/*

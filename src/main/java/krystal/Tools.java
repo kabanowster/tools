@@ -13,6 +13,8 @@ import java.lang.reflect.*;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.*;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -266,10 +268,44 @@ public class Tools {
 	}
 	
 	/**
-	 * Strip the string from first and last single and double quotes present and only if.
+	 * Strip the string from first and last single, double quotes or backticks present and only if.
 	 */
 	public String dequote(String str) {
-		return str.split("(?<=['\"]).*(?=['\"])")[0];
+		return str.split("(?<=['\"`]).*(?=['\"`])")[0];
+	}
+	
+	public LocalDateTime parseDateTime(String dateTime) {
+		try {
+			return LocalDateTime.parse(dateTime);
+		} catch (Exception _) {
+		}
+		
+		try {
+			return Instant.parse(dateTime).atZone(ZoneId.systemDefault()).toLocalDateTime();
+		} catch (Exception _) {
+		}
+		
+		try {
+			return OffsetDateTime.parse(dateTime).toLocalDateTime();
+		} catch (Exception _) {
+		}
+		
+		throw new DateTimeParseException("Could not parse provided date-time: %s.".formatted(dateTime), dateTime, 0);
+	}
+	
+	public LocalDate parseDate(String date) {
+		
+		try {
+			return parseDateTime(date).toLocalDate();
+		} catch (Exception _) {
+		}
+		
+		try {
+			return LocalDate.parse(date);
+		} catch (Exception _) {
+		}
+		
+		throw new DateTimeParseException("Could not parse provided date: %s.".formatted(date), date, 0);
 	}
 	
 }

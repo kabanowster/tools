@@ -157,7 +157,7 @@ public class VirtualPromise<T> {
 	 */
 	
 	private void takeNextThread() {
-		val thread = Thread.ofVirtual().name("%s queue watcher".formatted(pipelineName.get())).unstarted(() -> {
+		val thread = Thread.ofVirtual().name("%s Queue Watcher".formatted(pipelineName.get())).unstarted(() -> {
 			activeWorker.set(null);
 			if (!holdState.get()) {
 				try {
@@ -598,7 +598,7 @@ public class VirtualPromise<T> {
 	 */
 	
 	/**
-	 * Sets the pipeline name for the <b><i>next</i></b> steps. To make as step, use with {@link #monitor(Consumer, String)}.
+	 * Sets the pipeline name at the time of invoking. To make as step, use with {@link #monitor(Consumer, String)}.
 	 *
 	 * @see #as(String)
 	 */
@@ -710,8 +710,8 @@ public class VirtualPromise<T> {
 		if (isDropped()) return "dropped";
 		if (isIdle()) return "idle";
 		if (isOnHold()) return "on hold";
-		if (isAlive()) return "alive";
 		if (isComplete()) return "complete";
+		if (isAlive()) return "alive";
 		return "unknown";
 	}
 	

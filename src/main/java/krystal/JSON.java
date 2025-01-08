@@ -187,21 +187,15 @@ public class JSON {
 							      value = into(value, type, arguments);
 							      f.set(result, value);
 						      } catch (JSONException _) {
-							      log.info("[JSON Deserialization] Value for the key not found in JSON source. Case-sensitive! Skipped field: %s".formatted(name));
+							      log.info("[JSON Deserialization @%s] Value for the key not found in JSON source. Case-sensitive! Skipped field: %s".formatted(clazz.getSimpleName(), name));
 						      } catch (IllegalArgumentException _) {
 							      val deserializer = deserializers.get(name.toLowerCase());
-							      if (deserializer != null) {
-								      try {
-									      // method is setter (void)
-									      deserializer.invoke(result, value);
-								      } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
-									      log.warn("[JSON Deserialization] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s, value: (%s) %s".formatted(type.getSimpleName(),
-									                                                                                                                                                                                                      name,
-									                                                                                                                                                                                                      value != null
-									                                                                                                                                                                                                      ? value.getClass()
-									                                                                                                                                                                                                             .getSimpleName()
-									                                                                                                                                                                                                      : "null", value), e);
-								      }
+							      try {
+								      // method is setter (void)
+								      deserializer.invoke(result, value);
+							      } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException | NullPointerException e) {
+								      log.error("[JSON Deserialization @%s] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s, value: (%s) %s"
+										                .formatted(clazz.getSimpleName(), type.getSimpleName(), name, value != null ? value.getClass().getSimpleName() : "null", value), e);
 							      }
 						      } catch (IllegalAccessException e) {
 							      throw new RuntimeException(e);
@@ -210,7 +204,7 @@ public class JSON {
 					
 					return result;
 				} catch (InvocationTargetException | InstantiationException | IllegalAccessException | NoSuchMethodException e) {
-					throw new RuntimeException("No-Args constructor is missing for %s class.".formatted(clazz), e);
+					throw new RuntimeException("[JSON Deserialization @%s] No-Args constructor is missing.".formatted(clazz.getSimpleName()), e);
 				}
 			}
 		}

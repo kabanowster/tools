@@ -187,14 +187,24 @@ public class VirtualPromise<T> {
 		return "%s: [%s]".formatted(pipelineName.get(), threadName);
 	}
 	
+	/**
+	 * If the step is error handling step, let it work freely.
+	 * If it is a regular step, any error should be marked for handling later, including RuntimeExceptions.
+	 */
 	private Thread stateThread(String threadName, Runnable runnable, boolean onError) {
 		stepsCount.getAndIncrement();
 		return Thread.ofVirtual().name(constructThreadName(threadName)).unstarted(() -> {
 			activeWorker.set(Thread.currentThread());
-			try {
-				if (onError == (exception.get() != null)) runnable.run();
-			} catch (Exception e) {
-				setException(e);
+			if (onError) {
+				runnable.run();
+			} else {
+				if (exception.get() == null) {
+					try {
+						runnable.run();
+					} catch (Exception e) {
+						setException(e);
+					}
+				}
 			}
 			arriveAndStartNextThread();
 		});
@@ -204,13 +214,18 @@ public class VirtualPromise<T> {
 		return stateThread(threadName, runnable, false);
 	}
 	
+	/**
+	 * Handle error and clear the exception.
+	 */
 	private VirtualPromise<T> stateError(String threadName, Runnable catchAction) {
 		threads.offer(
 				stateThread(
 						threadName,
 						() -> {
-							catchAction.run();
-							exception.set(null);
+							if (exception.get() != null) {
+								catchAction.run();
+								exception.set(null);
+							}
 						}, true
 				));
 		return this;
@@ -469,8 +484,7 @@ public class VirtualPromise<T> {
 	 */
 	
 	/**
-	 * Resolve any exception, registered up to the current step in the pipeline. Occurrence of the exception prevents the executions down the pipeline, until it is resolved. This step in the pipeline can throw exception, thus overwriting the one being the
-	 * subject.
+	 * Resolve any exception, registered up to the current step in the pipeline. Occurrence of the exception prevents the executions down the pipeline, until it is resolved.
 	 *
 	 * @see #catchSupply(Function, String)
 	 * @see #catchThrow(String)
@@ -502,11 +516,13 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Resolve held exception (if any) by throwing {@link RuntimeException}.
+	 * Resolve held exception (if any) by logging and throwing {@link RuntimeException}.
 	 */
 	public VirtualPromise<T> catchThrow(@Nullable String threadName) {
 		return stateError(Optional.ofNullable(threadName).orElse("catchThrow"), () -> {
-			throw new RuntimeException(exception.get());
+			val e = exception.get();
+			log.fatal("Fatal Error.", e);
+			throw new RuntimeException(e);
 		});
 	}
 	
@@ -515,6 +531,24 @@ public class VirtualPromise<T> {
 	 */
 	public VirtualPromise<T> catchThrow() {
 		return catchThrow(null);
+	}
+	
+	/**
+	 * Resolve held exception (if any) by logging and dropping the processing.
+	 */
+	public VirtualPromise<T> catchBreak(@Nullable String threadName) {
+		return stateError(Optional.ofNullable(threadName).orElse("catchBreak"), () -> {
+			log.error(exception.get());
+			threads.clear();
+			holdState.set(true);
+		});
+	}
+	
+	/**
+	 * @see #catchBreak(String)
+	 */
+	public VirtualPromise<T> catchBreak() {
+		return catchBreak(null);
 	}
 	
 	/**
@@ -739,8 +773,9 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Wait for the pipeline to complete and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object. The VP becomes {@link #cancel() cancelled} after returning the result.
+	 * Wait for the pipeline to complete normally or exceptionally and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object.
 	 *
+	 * @apiNote Every exception within pipeline must be explicitly caught with {@link #catchExceptions(ExceptionsHandler)} and variants steps, or they will be silent (including {@link RuntimeException}).
 	 * @see #holdState
 	 */
 	public Optional<T> join() {
@@ -748,7 +783,7 @@ public class VirtualPromise<T> {
 		if (!holdState.get()) {
 			try {
 				while (!isComplete() || isActive()) {
-					if (isIdle() || hasException()) break;
+					if (isIdle()) break;
 					Thread.sleep(threadSleepDuration);
 				}
 			} catch (InterruptedException e) {

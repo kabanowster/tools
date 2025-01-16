@@ -183,18 +183,20 @@ public class JSON {
 						      
 						      Object value = null;
 						      try {
+							      if (jsonObject.isNull(name)) return;
 							      value = jsonObject.get(name);
 							      value = into(value, type, arguments);
 							      f.set(result, value);
 						      } catch (JSONException _) {
-							      log.info("[JSON Deserialization @%s] Value for the key not found in JSON source. Case-sensitive! Skipped field: %s".formatted(clazz.getSimpleName(), name));
+							      log.info("[JSON Deserialization @%s[(%s) %s = (%s) %s]] Value for the key not found in JSON source. Case-sensitive! Field skipped."
+									               .formatted(clazz.getSimpleName(), type.getSimpleName(), name, value != null ? value.getClass().getSimpleName() : "null", value));
 						      } catch (IllegalArgumentException _) {
 							      val deserializer = deserializers.get(name.toLowerCase());
 							      try {
 								      // method is setter (void)
 								      deserializer.invoke(result, value);
 							      } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException | NullPointerException e) {
-								      log.error("[JSON Deserialization @%s] Value can not be written to field of type %s. Check for missing @Deserializer or Setter method. Case-insensitive! Skipped field: %s, value: (%s) %s"
+								      log.error("[JSON Deserialization @%s[(%s) %s = (%s) %s]] Value can not be written to field of given type. Check for missing @Deserializer or Setter method. Case-insensitive! Field skipped."
 										                .formatted(clazz.getSimpleName(), type.getSimpleName(), name, value != null ? value.getClass().getSimpleName() : "null", value), e);
 							      }
 						      } catch (IllegalAccessException e) {

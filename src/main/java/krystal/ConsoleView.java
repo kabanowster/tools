@@ -52,16 +52,19 @@ public class ConsoleView {
 	private final LinkedBlockingQueue<Element> messagesStack = new LinkedBlockingQueue<>();
 	/**
 	 * Characters amount limit, upon reaching which, the view will be cleared.
+	 * <p><i>Default: 500000</i></p>
 	 */
 	private static @Setter int charactersLimit = 500000;
 	/**
 	 * Interval for printing messages (in milliseconds).
+	 * <p><i>Default: 500</i></p>
 	 */
 	private static @Setter int printingRate = 500;
 	/**
 	 * Print amount of messages with {@link #setPrintingRate(int)}.
+	 * <p><i>Default: 20</i></p>
 	 */
-	private static @Setter int messagesAtOnce = 20;
+	private static @Setter int messagesAtOnce = 10;
 	
 	/**
 	 * Creates a simple Swing window to output log events.

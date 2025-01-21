@@ -36,13 +36,13 @@ public class VirtualPromise<T> {
 	
 	private static @Setter int threadSleepDuration = 10;
 	
-	private final LinkedBlockingQueue<Thread> threads;
-	private final AtomicReference<T> objectState;
-	private final AtomicInteger stepsCount;
-	private final AtomicReference<Thread> activeWorker;
-	private final AtomicReference<Thread> queueWatcher;
-	private final AtomicReference<Throwable> exception;
-	private final AtomicReference<ExceptionsHandler> exceptionsHandler;
+	private LinkedBlockingQueue<Thread> threads;
+	private AtomicReference<T> objectState;
+	private AtomicInteger stepsCount;
+	private AtomicReference<Thread> activeWorker;
+	private AtomicReference<Thread> queueWatcher;
+	private AtomicReference<Throwable> exception;
+	private AtomicReference<ExceptionsHandler> exceptionsHandler;
 	/**
 	 * You can put the further execution of the pipeline into hold. The {@link #activeWorker} thread will finish its tasks but won't trigger the next step in line.
 	 *
@@ -53,14 +53,14 @@ public class VirtualPromise<T> {
 	 * @see #resumeNext()
 	 * @see #cancel()
 	 */
-	private final AtomicBoolean holdState;
+	private AtomicBoolean holdState;
 	/**
 	 * The pipeline name used for debugging.
 	 *
 	 * @see #getActiveWorkerName()
 	 */
-	private final AtomicReference<String> pipelineName;
-	private final AtomicReference<Thread> timeout;
+	private AtomicReference<String> pipelineName;
+	private AtomicReference<Thread> timeout;
 	
 	/*
 	 * Constructors
@@ -172,7 +172,7 @@ public class VirtualPromise<T> {
 					holdState.set(true);
 				}
 			}
-			queueWatcher.set(null);
+			Optional.ofNullable(queueWatcher).ifPresent(qw -> qw.set(null)); // can be null if the thread started is #destroy()
 		});
 		queueWatcher.set(thread);
 		thread.start();
@@ -627,6 +627,17 @@ public class VirtualPromise<T> {
 		}));
 	}
 	
+	/**
+	 * Used as a last step in VPs that are not meant to provide values or {@link #join()} the current flow, to gracefully destroy itself after processing, preventing memory leak.
+	 * Unclosed, concurrent VPs will have their {@link #queueWatcher} waiting for next steps, preventing garbage collection.
+	 *
+	 * @apiNote If not utilised, make sure to {@link #destroy()}.
+	 */
+	public VirtualPromise<T> thenClose() {
+		threads.offer(Thread.ofVirtual().unstarted(this::destroy));
+		return this;
+	}
+	
 	/*
 	 * Information
 	 */
@@ -687,7 +698,7 @@ public class VirtualPromise<T> {
 	}
 	
 	public boolean hasException() {
-		return exception.get() != null;
+		return exception != null && exception.get() != null;
 	}
 	
 	/**
@@ -705,42 +716,47 @@ public class VirtualPromise<T> {
 	 * True if all threads in pipeline completed their tasks, and it is ready to return result.
 	 */
 	public boolean isComplete() {
-		return stepsCount.get() == 0;
+		return !isDestroyed() && stepsCount.get() == 0;
 	}
 	
 	/**
 	 * True if there is any thread working at the moment.
 	 */
 	public boolean isActive() {
-		return activeWorker.get() != null;
+		return !isDestroyed() && activeWorker.get() != null;
 	}
 	
 	/**
 	 * True if there is any thread working at the moment or any thread watching the queue.
 	 */
 	public boolean isAlive() {
-		return activeWorker.get() != null || queueWatcher.get() != null;
+		return !isDestroyed() && (activeWorker.get() != null || queueWatcher.get() != null);
 	}
 	
 	/**
 	 * Is on hold and has no further steps to follow. I.e. as a result of {@link #cancelAndDrop()}.
 	 */
 	public boolean isIdle() {
-		return isOnHold() && threads.isEmpty();
+		return isDestroyed() || (isOnHold() && threads.isEmpty());
 	}
 	
 	/**
 	 * @see #holdState
 	 */
 	public boolean isOnHold() {
-		return holdState.get();
+		return isDestroyed() || holdState.get();
 	}
 	
 	public boolean isDropped() {
-		return isIdle() && stepsCount.get() > 0;
+		return isDestroyed() || (isIdle() && stepsCount.get() > 0);
+	}
+	
+	public boolean isDestroyed() {
+		return objectState == null;
 	}
 	
 	public String getStatus() {
+		if (isDestroyed()) return "destroyed";
 		if (isDropped()) return "dropped";
 		if (isIdle()) return "idle";
 		if (isOnHold()) return "on hold";
@@ -773,10 +789,10 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Wait for the pipeline to complete normally or exceptionally and return the {@link Optional} of the result. If the promise is in the hold state, just returns the Optional with current state of object.
+	 * Wait for the pipeline to complete normally or exceptionally and return the {@link Optional} of the result. If the promise is in the {@link #holdState}, just returns the Optional with current state of object.
+	 * The VP is {@link #destroy() destroyed} afterward.
 	 *
 	 * @apiNote Every exception within pipeline must be explicitly caught with {@link #catchExceptions(ExceptionsHandler)} and variants steps, or they will be silent (including {@link RuntimeException}).
-	 * @see #holdState
 	 */
 	public Optional<T> join() {
 		// phaser.arriveAndAwaitAdvance(); AWAIT ADVANCE IS PINNING VIRTUAL THREADS :(
@@ -790,8 +806,9 @@ public class VirtualPromise<T> {
 				throw new RuntimeException(e);
 			}
 		}
-		cancel();
-		return Optional.ofNullable(objectState.get());
+		val result = objectState.get();
+		thenClose();
+		return Optional.ofNullable(result);
 	}
 	
 	/**
@@ -868,6 +885,30 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
+	 * Destroy elements of this VP, which then, can not be used anymore.
+	 */
+	public void destroy() {
+		threads = null;
+		objectState = null;
+		stepsCount = null;
+		activeWorker = null;
+		queueWatcher = null;
+		exception = null;
+		exceptionsHandler = null;
+		holdState = null;
+		pipelineName = null;
+		timeout = null;
+	}
+	
+	/**
+	 * {@link #cancelAndDrop()} and {@link #destroy()}
+	 */
+	public void kill() {
+		cancelAndDrop();
+		destroy();
+	}
+	
+	/**
 	 * If the pipeline is not {@link #isAlive() alive}, begin the executions by invoking the next thread in line. The pipeline can still be on {@link #holdState}, then this method won't trigger further execution.
 	 *
 	 * @see #holdState
@@ -903,7 +944,7 @@ public class VirtualPromise<T> {
 		timeout.set(Thread.startVirtualThread(() -> {
 			try {
 				Thread.sleep(duration);
-				if (!isComplete()) cancel();
+				if (!isComplete()) kill();
 			} catch (InterruptedException e) {
 				if (handler != null)
 					handler.accept(e);
@@ -911,6 +952,7 @@ public class VirtualPromise<T> {
 		}));
 		return this;
 	}
+	
 	
 	/*
 	 * CompletableFuture Mutation

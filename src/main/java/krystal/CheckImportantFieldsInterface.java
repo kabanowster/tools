@@ -14,7 +14,12 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 /**
- * Interface to check important fields values with predicate.
+ * Interface to check important fields values with predicates. All fields are treated as important by default, thus are subjects for the predicate. Use annotations to fine tune the behaviour.
+ *
+ * @see ExplicitImportance
+ * @see ImportantField
+ * @see NotImportantField
+ * @see Skip
  */
 public interface CheckImportantFieldsInterface {
 	
@@ -58,15 +63,24 @@ public interface CheckImportantFieldsInterface {
 		
 		return Arrays.stream(clazz.getDeclaredFields())
 		             .filter(f -> f.trySetAccessible()
-				                          && explicitCheck
-		                          ? f.isAnnotationPresent(ImportantField.class)
-		                          : (!f.isAnnotationPresent(NotImportantField.class)
-				                             && !Tools.isSkipped(f, SkipTypes.importance))
+				                          && (explicitCheck
+				                              ? f.isAnnotationPresent(ImportantField.class)
+				                              : (!f.isAnnotationPresent(NotImportantField.class))
+						                                && !Tools.isSkipped(f, SkipTypes.importance))
 		             );
 	}
 	
 	/**
-	 * {@link Skip} with {@link SkipTypes#importance} can be used instead.
+	 * By default, all {@link Field Fields} are treated as important. With this annotation only {@link ImportantField} fields are selected.
+	 */
+	@Target({ElementType.TYPE})
+	@Retention(RetentionPolicy.RUNTIME)
+	@interface ExplicitImportance {
+	
+	}
+	
+	/**
+	 * Use to exclude field from the predicate. {@link Skip} with {@link SkipTypes#importance} can be used instead.
 	 */
 	@Target({ElementType.FIELD})
 	@Retention(RetentionPolicy.RUNTIME)
@@ -74,12 +88,9 @@ public interface CheckImportantFieldsInterface {
 	
 	}
 	
-	@Target({ElementType.TYPE})
-	@Retention(RetentionPolicy.RUNTIME)
-	@interface ExplicitImportance {
-	
-	}
-	
+	/**
+	 * Used with {@link ExplicitImportance} to declare fields to check.
+	 */
 	@Target({ElementType.FIELD})
 	@Retention(RetentionPolicy.RUNTIME)
 	@interface ImportantField {

@@ -19,6 +19,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -61,7 +62,7 @@ public class VirtualPromise<T> {
 	 */
 	private AtomicReference<String> pipelineName;
 	private AtomicReference<Thread> timeout;
-	
+	private ReentrantLock lock;
 	/*
 	 * Constructors
 	 */
@@ -77,6 +78,7 @@ public class VirtualPromise<T> {
 		holdState = new AtomicBoolean(false);
 		pipelineName = new AtomicReference<>("Unnamed VirtualPromise");
 		timeout = null;
+		lock = new ReentrantLock();
 	}
 	
 	private VirtualPromise(String pipelineName) {
@@ -244,11 +246,11 @@ public class VirtualPromise<T> {
 	private <R> VirtualPromise<R> stateChange(String threadName, Supplier<R> stateAction) {
 		val newState = new AtomicReference<R>();
 		threads.offer(stateThread(threadName, () -> newState.set(stateAction.get())));
-		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, newState, stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout, lock);
 	}
 	
 	public VirtualPromise<Void> toVoid() {
-		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout);
+		return new VirtualPromise<>(threads, new AtomicReference<>(), stepsCount, activeWorker, queueWatcher, exception, exceptionsHandler, holdState, pipelineName, timeout, lock);
 	}
 	
 	/*
@@ -716,35 +718,35 @@ public class VirtualPromise<T> {
 	 * True if all threads in pipeline completed their tasks, and it is ready to return result.
 	 */
 	public boolean isComplete() {
-		return !isDestroyed() && stepsCount.get() == 0;
+		return stepsCount.get() == 0;
 	}
 	
 	/**
 	 * True if there is any thread working at the moment.
 	 */
 	public boolean isActive() {
-		return !isDestroyed() && activeWorker.get() != null;
+		return activeWorker.get() != null;
 	}
 	
 	/**
 	 * True if there is any thread working at the moment or any thread watching the queue.
 	 */
 	public boolean isAlive() {
-		return !isDestroyed() && (activeWorker.get() != null || queueWatcher.get() != null);
+		return activeWorker.get() != null || queueWatcher.get() != null;
 	}
 	
 	/**
 	 * Is on hold and has no further steps to follow. I.e. as a result of {@link #cancelAndDrop()}.
 	 */
 	public boolean isIdle() {
-		return isDestroyed() || (isOnHold() && threads.isEmpty());
+		return isOnHold() && threads.isEmpty();
 	}
 	
 	/**
 	 * @see #holdState
 	 */
 	public boolean isOnHold() {
-		return isDestroyed() || holdState.get();
+		return holdState.get();
 	}
 	
 	public boolean isDropped() {
@@ -795,20 +797,26 @@ public class VirtualPromise<T> {
 	 * @apiNote Every exception within pipeline must be explicitly caught with {@link #catchExceptions(ExceptionsHandler)} and variants steps, or they will be silent (including {@link RuntimeException}).
 	 */
 	public Optional<T> join() {
-		// phaser.arriveAndAwaitAdvance(); AWAIT ADVANCE IS PINNING VIRTUAL THREADS :(
-		if (!holdState.get()) {
-			try {
-				while (!isComplete() || isActive()) {
-					if (isIdle()) break;
-					Thread.sleep(threadSleepDuration);
+		try {
+			lock.lock();
+			// phaser.arriveAndAwaitAdvance(); AWAIT ADVANCE IS PINNING VIRTUAL THREADS :(
+			if (!holdState.get()) {
+				try {
+					while (!isComplete() || isActive()) {
+						if (isIdle()) break;
+						Thread.sleep(threadSleepDuration);
+					}
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
+				} catch (NullPointerException _) {
 				}
-			} catch (InterruptedException e) {
-				throw new RuntimeException(e);
 			}
+			val result = objectState.get();
+			thenClose();
+			return Optional.ofNullable(result);
+		} finally {
+			lock.unlock();
 		}
-		val result = objectState.get();
-		thenClose();
-		return Optional.ofNullable(result);
 	}
 	
 	/**
@@ -886,18 +894,24 @@ public class VirtualPromise<T> {
 	
 	/**
 	 * Destroy elements of this VP, which then, can not be used anymore.
+	 *
+	 * @apiNote In concurrent scenarios, be aware of destroying while i.e. {@link #getStatus()}, which may throw {@link NullPointerException}.
 	 */
 	public void destroy() {
-		threads = null;
-		objectState = null;
-		stepsCount = null;
-		activeWorker = null;
-		queueWatcher = null;
-		exception = null;
-		exceptionsHandler = null;
-		holdState = null;
-		pipelineName = null;
-		timeout = null;
+		try {
+			lock.lock();
+			threads = null;
+			objectState = null;
+			stepsCount = null;
+			activeWorker = null;
+			queueWatcher = null;
+			exception = null;
+			exceptionsHandler = null;
+			holdState = null;
+			pipelineName = null;
+		} finally {
+			lock.unlock();
+		}
 	}
 	
 	/**

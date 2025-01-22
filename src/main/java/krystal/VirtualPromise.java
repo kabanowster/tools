@@ -102,8 +102,9 @@ public class VirtualPromise<T> {
 				Optional.ofNullable(threadName).orElse("fork"),
 				() -> Stream.of(promises)
 				            .map(p -> {
-					            p.join();
-					            return p.getException();
+					            AtomicReference<Throwable> ex = new AtomicReference<>();
+					            p.catchRun(ex::set).join();
+					            return ex.get();
 				            })
 				            .filter(Objects::nonNull)
 				            .findAny()
@@ -357,8 +358,9 @@ public class VirtualPromise<T> {
 				Optional.ofNullable(threadName).orElse("join"),
 				() -> Stream.of(promises)
 				            .map(p -> {
-					            p.join();
-					            return p.getException();
+					            AtomicReference<Throwable> ex = new AtomicReference<>();
+					            p.catchRun(ex::set).join();
+					            return ex.get();
 				            })
 				            .filter(Objects::nonNull)
 				            .findAny()
@@ -381,8 +383,9 @@ public class VirtualPromise<T> {
 				Optional.ofNullable(threadName).orElse("join"),
 				() -> promises.get()
 				              .map(p -> {
-					              p.join();
-					              return p.getException();
+					              AtomicReference<Throwable> ex = new AtomicReference<>();
+					              p.catchRun(ex::set).join();
+					              return ex.get();
 				              })
 				              .filter(Objects::nonNull)
 				              .findAny()

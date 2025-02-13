@@ -39,7 +39,7 @@ public class Tools {
 	 * Decode given {@link String} into sequence of {@link Integer}s using range notation. I.e. {@code "1,2,3:6,10"} will become {@link Set} of {@code {1,2,3,4,5,6,10}} where {@code ","} is <b><i>groupsDelimiter</i></b> and {@code ":"} is
 	 * <b><i>rangesDelimiter</i></b>.
 	 */
-	public Set<Integer> expandGroupsOfRangesToInts(@NonNull String groupsDelimiter, @NonNull String rangesDelimiter, String ranges) {
+	public Set<Integer> expandGroupsOfRangesToInts(@NonNull String groupsDelimiter, @NonNull String rangesDelimiter, @Nullable String ranges) {
 		if (ranges == null) return Set.of();
 		return Stream.of(ranges.split(groupsDelimiter)).flatMap(r -> {
 			String[] range = r.strip().split(rangesDelimiter);
@@ -52,7 +52,8 @@ public class Tools {
 	 *
 	 * @see #expandGroupsOfRangesToInts(String, String, String)
 	 */
-	public String intsAsGroupsOfRanges(@NonNull String groupsDelimiter, @NonNull String rangesDelimiter, Integer... ints) {
+	public @Nullable String intsAsGroupsOfRanges(@NonNull String groupsDelimiter, @NonNull String rangesDelimiter, @Nullable Integer... ints) {
+		if (ints == null || ints.length == 0) return null;
 		return groupSequentialIntegers(ints).stream().map(l -> {
 			if (l.size() > 1) return l.getFirst() + rangesDelimiter + l.getLast();
 			else return l.getFirst().toString();
@@ -62,8 +63,8 @@ public class Tools {
 	/**
 	 * Groups into {@link List}s provided {@link Integer}s creating sequences with difference of 1.
 	 */
-	public Set<List<Integer>> groupSequentialIntegers(Integer... ints) {
-		if (ints == null) return Set.of();
+	public Set<List<Integer>> groupSequentialIntegers(@Nullable Integer... ints) {
+		if (ints == null || ints.length == 0) return Set.of();
 		
 		val sequence = Arrays.stream(ints).sorted().toList();
 		val result = new LinkedHashSet<List<Integer>>();

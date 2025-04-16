@@ -76,7 +76,7 @@ public class JSON {
 	 * Recursively prep object and its fields for serialization by changing it into Map or Collection.
 	 */
 	private Object flattison(Object obj) {
-		if (obj == null) return null;
+		if (obj == null) return JSONObject.NULL;
 		val clazz = obj.getClass();
 		
 		if (Map.class.isAssignableFrom(clazz)) {

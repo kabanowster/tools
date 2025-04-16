@@ -23,6 +23,9 @@ import java.util.stream.Stream;
  */
 public interface CheckImportantFieldsInterface {
 	
+	/**
+	 * Check if none of important fields are null. By default, all fields are important.
+	 */
 	default boolean noneIsNull() {
 		return importantFieldsValuesNoneMatch(Objects::isNull);
 	}

@@ -272,7 +272,7 @@ public class Tools {
 	 * Strip the string from first and last single, double quotes or backticks present and only if.
 	 */
 	public String dequote(String str) {
-		return str.split("(?<=['\"`]).*(?=['\"`])")[0];
+		return Arrays.stream(str.split("^['\"`]|['\"`]$")).filter(s -> !s.isEmpty()).findFirst().orElse("");
 	}
 	
 	public LocalDateTime parseDateTime(String dateTime) {

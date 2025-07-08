@@ -9,10 +9,12 @@ import lombok.experimental.UtilityClass;
 import lombok.extern.log4j.Log4j2;
 import lombok.val;
 
+import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -186,6 +188,99 @@ public class StringRenderer {
 		      });
 		
 		return minWidths.values().stream().toList();
+	}
+	
+	@Log4j2
+	@Getter
+	@Setter
+	public abstract class StatusMonitor {
+		
+		protected final String id;
+		protected @Nullable String caption;
+		protected Supplier<String> valueProvider;
+		protected String currentValue;
+		private Thread updater;
+		private boolean closed;
+		
+		public StatusMonitor() {
+			this.id = UUID.randomUUID().toString();
+		}
+		
+		public StatusMonitor(String caption, Supplier<String> valueProvider) {
+			this();
+			this.caption = caption;
+			this.valueProvider = valueProvider;
+		}
+		
+		public static StatusMonitor simpleStatusMonitor() {
+			return new StatusMonitor() {
+				@Override
+				public StatusMonitor render() {
+					return this;
+				}
+				
+				@Override
+				public void dispose() {
+				}
+			};
+		}
+		
+		public static StatusMonitor simpleStatusMonitor(UnaryOperator<StatusMonitor> renderMonitor, Consumer<StatusMonitor> disposeMonitor) {
+			return new StatusMonitor() {
+				@Override
+				public StatusMonitor render() {
+					return renderMonitor.apply(this);
+				}
+				
+				@Override
+				public void dispose() {
+					disposeMonitor.accept(this);
+				}
+			};
+		}
+		
+		public abstract StatusMonitor render();
+		
+		public abstract void dispose();
+		
+		public String getId() {
+			return "monitor_" + id;
+		}
+		
+		/**
+		 * @param pure
+		 * 		If {@code true}, body won't be enclosed in html tags.
+		 */
+		public String toString(boolean pure) {
+			val meatBall = "%s %s".formatted(Optional.ofNullable(caption).orElse("Status:"), currentValue);
+			if (pure) return meatBall;
+			return "<div id=\"%s\" class=\"monitor\"><pre>%s</pre></div>".formatted(getId(), meatBall);
+		}
+		
+		public void start() {
+			if (updater != null) return;
+			updater = Thread.ofVirtual()
+			                .name("StatusMonitor-Renderer")
+			                .start(() -> {
+				                while (!closed) {
+					                currentValue = valueProvider.get();
+					                render();
+					                try {
+						                Thread.sleep(1000);
+					                } catch (InterruptedException _) {
+						                updater = null;
+						                start();
+					                }
+				                }
+			                });
+		}
+		
+		public void stop() {
+			closed = true;
+			updater = null;
+			dispose();
+		}
+		
 	}
 	
 	/**

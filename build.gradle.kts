@@ -1,7 +1,7 @@
 plugins {
-    id("setup")
-    id("myJavaFx")
-    id("publish")
+    id("io.krystal.setup")
+    id("io.krystal.myJavaFx")
+    id("io.krystal.publish")
 }
 
 group = "io.krystal"

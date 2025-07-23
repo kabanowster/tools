@@ -8,8 +8,8 @@ import lombok.Setter;
 import lombok.experimental.UtilityClass;
 import lombok.extern.log4j.Log4j2;
 import lombok.val;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.Map.Entry;

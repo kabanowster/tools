@@ -12,8 +12,8 @@ import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicArrowButton;
 import javax.swing.plaf.basic.BasicScrollBarUI;

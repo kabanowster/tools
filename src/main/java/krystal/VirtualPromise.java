@@ -1,5 +1,6 @@
 package krystal;
 
+import jdk.management.VirtualThreadSchedulerMXBean;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.Setter;
@@ -7,6 +8,7 @@ import lombok.extern.log4j.Log4j2;
 import lombok.val;
 import org.jspecify.annotations.Nullable;
 
+import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -63,6 +65,15 @@ public class VirtualPromise<T> {
 	private AtomicReference<String> pipelineName;
 	private AtomicReference<Thread> timeout;
 	private ReentrantLock lock;
+	
+	public static void setMaximumCarriersCapacity(int targetCapacity) {
+		try {
+			ManagementFactory.getPlatformMXBean(VirtualThreadSchedulerMXBean.class).setParallelism(targetCapacity);
+		} catch (Exception e) {
+			log.error("Unable to set maximum carriers capacity", e);
+		}
+	}
+	
 	/*
 	 * Constructors
 	 */

@@ -170,12 +170,16 @@ public class VirtualPromise<T> {
 	 * Primitive actions
 	 */
 	
+	/**
+	 * Create a queue watcher, which starts incoming threads, unless VP is on {@link #holdState}.
+	 */
 	private void takeNextThread() {
 		val thread = Thread.ofVirtual().name("%s Queue Watcher".formatted(pipelineName.get())).unstarted(() -> {
 			activeWorker.set(null);
 			if (!holdState.get()) {
 				try {
 					while (threads.isEmpty()) {
+						// wait for the incoming threads
 						// take() method pins the thread
 						Thread.sleep(threadSleepDuration);
 					}
@@ -550,7 +554,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Resolve held exception (if any) by logging and dropping the processing.
+	 * Resolve held exception (if any) by logging and dropping the processing and clearing the queue.
 	 */
 	public VirtualPromise<T> catchBreak(@Nullable String threadName) {
 		return stateError(Optional.ofNullable(threadName).orElse("catchBreak"), () -> {
@@ -599,7 +603,7 @@ public class VirtualPromise<T> {
 	 */
 	
 	/**
-	 * Take {@link Consumer} action on current .
+	 * Take {@link Consumer} action on current stage.
 	 * I.e. this step can be used to create dependencies on other , at the time of evaluation.
 	 *
 	 * @see #mirror(Supplier[])
@@ -806,7 +810,7 @@ public class VirtualPromise<T> {
 	
 	/**
 	 * Wait for the pipeline to complete normally or exceptionally and return the {@link Optional} of the result. If the promise is in the {@link #holdState}, just returns the Optional with current state of object.
-	 * The VP is {@link #destroy() destroyed} afterward.
+	 * The VP will {@link #destroy()} itself afterward, <b>unless</b> it is on {@link #holdState} invoked with filled queue (i.e. {@link #cancel()}.
 	 *
 	 * @apiNote Every exception within pipeline must be explicitly caught with {@link #catchExceptions(ExceptionsHandler)} and variants steps, or they will be silent (including {@link RuntimeException}).
 	 */
@@ -823,10 +827,15 @@ public class VirtualPromise<T> {
 				} catch (InterruptedException e) {
 					throw new RuntimeException(e);
 				} catch (NullPointerException _) {
+					// got destroyed
 				}
 			}
-			val result = objectState.get();
-			thenClose();
+			T result = null;
+			if (!isDestroyed()) {
+				result = objectState.get();
+				thenClose(); // gracely destroy itself when the watcher is present
+				if (isOnHold() && threads.size() == 1) resumeNext(); // make sure to run destroy if there's no watcher and further steps (i.e. cancelled and dropped)
+			}
 			return Optional.ofNullable(result);
 		} finally {
 			lock.unlock();
@@ -834,12 +843,10 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * Effectively {@link #catchThrow()} and {@link #join()}, wrapped together.
-	 *
-	 * @see #holdState
+	 * Throw stored error as {@link RuntimeException} as the last step before join moment of {@link #join()}.
 	 */
-	public Optional<T> joinThrow() {
-		return this.catchThrow().join();
+	public Optional<T> joinThrow() throws RuntimeException {
+		return catchThrow().join();
 	}
 	
 	/**
@@ -872,6 +879,7 @@ public class VirtualPromise<T> {
 	/**
 	 * Interrupt and cancel the current execution and set the pipeline on hold state.
 	 *
+	 * @see #kill()
 	 * @see #holdState
 	 * @see #cancelAndDrop()
 	 * @see #cancelAndGet()
@@ -889,7 +897,7 @@ public class VirtualPromise<T> {
 	}
 	
 	/**
-	 * {@link #cancel()} and drop any further steps.
+	 * {@link #cancel()} and drop any further steps by clearing the queue.
 	 */
 	public void cancelAndDrop() {
 		cancel();
@@ -930,6 +938,9 @@ public class VirtualPromise<T> {
 	
 	/**
 	 * {@link #cancelAndDrop()} and {@link #destroy()}
+	 * Useful in error handling scenarios.
+	 *
+	 * @see #monitor(Consumer, String)
 	 */
 	public void kill() {
 		cancelAndDrop();
@@ -981,9 +992,8 @@ public class VirtualPromise<T> {
 		return this;
 	}
 	
-	
 	/*
-	 * CompletableFuture Mutation
+	 * CompletableFuture mutation
 	 */
 	
 	public static <T> VirtualPromise<T> fromFuture(CompletableFuture<T> future) {

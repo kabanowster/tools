@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.krystal"
-version = "1.19.2"
+version = "1.20.1"
 
 java {
     withSourcesJar()

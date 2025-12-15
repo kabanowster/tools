@@ -8,6 +8,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import javax.annotation.Nullable;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -186,6 +187,7 @@ public class JSON {
 							      if (jsonObject.isNull(name)) return;
 							      value = jsonObject.get(name);
 							      value = into(value, type, arguments);
+								  value = parseBasicTypes(value, type);
 							      f.set(result, value);
 						      } catch (JSONException _) {
 							      log.info("[JSON Deserialization @%s[(%s) %s = (%s) %s]] Value for the key not found in JSON source. Case-sensitive! Field skipped."
@@ -257,4 +259,20 @@ public class JSON {
 		
 	}
 	
+	/**
+	 * In many cases (i.e. {@link Number} subtypes), basic {@link JSONObject} deserialization mismatches the expected field type in Java, so they need to be parsed casewise.
+	 */
+	private Object parseBasicTypes(@Nullable Object value, Class<?> type) {
+		try {
+			val str =  value.toString();
+			if (Boolean.class.isAssignableFrom(type)) return Boolean.parseBoolean(str);
+			if (Byte.class.isAssignableFrom(type)) return Byte.parseByte(str);
+			if (Double.class.isAssignableFrom(type)) return Double.parseDouble(str);
+			if (Float.class.isAssignableFrom(type)) return Float.parseFloat(str);
+			if (Integer.class.isAssignableFrom(type)) return Integer.parseInt(str);
+			if (Long.class.isAssignableFrom(type)) return Long.parseLong(str);
+			if (Short.class.isAssignableFrom(type)) return Short.parseShort(str);
+		} catch (NullPointerException | NumberFormatException _) {}
+		return value;
+	}
 }

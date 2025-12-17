@@ -17,6 +17,8 @@ import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -272,6 +274,8 @@ public class JSON {
 			if (Integer.class.isAssignableFrom(type)) return Integer.parseInt(str);
 			if (Long.class.isAssignableFrom(type)) return Long.parseLong(str);
 			if (Short.class.isAssignableFrom(type)) return Short.parseShort(str);
+			if (LocalDate.class.isAssignableFrom(type)) return Tools.parseDate(str);
+			if (LocalDateTime.class.isAssignableFrom(type)) return Tools.parseDateTime(str);
 		} catch (NullPointerException | NumberFormatException _) {}
 		return value;
 	}

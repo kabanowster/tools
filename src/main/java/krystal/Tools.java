@@ -309,4 +309,24 @@ public class Tools {
 		throw new DateTimeParseException("Could not parse provided date: %s.".formatted(date), date, 0);
 	}
 	
+	/**
+	 * If String, make safe to embed into SQL.
+	 */
+	public Object sanitizeForSql(Object value) {
+		if (!(value instanceof String s)) return value;
+		String sanitized = s;
+		// Escape single quotes by prefixing with backslash
+		sanitized = sanitized.replace("'", "''");
+		return sanitized;
+	}
+	
+	/**
+	 * {@link #sanitizeForSql(Object)} but take an Array of Objects.
+	 */
+	public Object[] sanitizeObjectsForSql(Object... values) {
+		return Stream.of(values)
+		             .map(Tools::sanitizeForSql)
+		             .toArray();
+	}
+	
 }

@@ -1,10 +1,10 @@
 plugins {
-    id("io.krystal.setup")
-    id("io.krystal.myJavaFx")
-    id("io.krystal.publish")
+    id("io.github.kabanowster.setup")
+    id("io.github.kabanowster.myJavaFx")
+    id("io.github.kabanowster.publish")
 }
 
-group = "io.krystal"
+group = "io.github.kabanowster"
 version = "1.20.5"
 
 java {
